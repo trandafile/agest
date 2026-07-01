@@ -1,0 +1,26 @@
+# Esclusioni progetto
+
+# Segreti — MAI committare (contiene service_role key e client_secret Google)
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Test / lint cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Script di upload
+.upload_version.txt
+
+# OS
+.DS_Store
+Thumbs.db
+hipa/
+hipa/

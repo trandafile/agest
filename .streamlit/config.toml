@@ -1,0 +1,12 @@
+# Configurazione Streamlit (in git; NON contiene segreti)
+
+[theme]
+base = "light"
+primaryColor = "#1f6feb"
+
+[server]
+headless = true
+# Deve combaciare con auth.redirect_uri in secrets.toml (porta 8501 di default)
+
+[browser]
+gatherUsageStats = false
