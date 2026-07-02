@@ -15,7 +15,7 @@ from src.domain.models import (
     Persona,
     Task,
 )
-from src.lib.labels import etichetta_progetto
+from src.lib.labels import etichetta_con_tag
 
 STATO_BADGE_D = {
     "da_fare": "⚪ Da fare",
@@ -47,13 +47,24 @@ def riga_task(
     is_admin: bool,
     key_prefix: str,
     indent: bool = False,
+    etichette_map: dict | None = None,
 ) -> None:
-    """Riga compatta di un task con bottone Dettagli."""
+    """Riga compatta di un task con bottone Dettagli.
+
+    `etichette_map` opzionale: {task_id: [{nome, colore}]} per i chip etichetta.
+    """
     c1, c2 = st.columns([8.5, 1.5])
     prefisso = "&nbsp;&nbsp;&nbsp;↳ " if indent else ""
     owner = nomi.get(task.owner_id, "—")
     sup = nomi.get(task.supervisor_id)
     persone_txt = f"👤 {owner}" + (f" · 👁 {sup}" if sup and sup != owner else "")
+    chips = ""
+    for e in (etichette_map or {}).get(str(task.id), []):
+        chips += (
+            f"<span style='background:{e['colore']}22;color:{e['colore']};"
+            "border-radius:4px;padding:1px 6px;font-size:10px;margin-right:3px'>"
+            f"{e['nome']}</span>"
+        )
     c1.markdown(
         f"{prefisso}**{task.titolo}** · "
         f"{STATO_TASK_BADGE.get(task.stato, task.stato)} · "
@@ -64,6 +75,7 @@ def riga_task(
             if task.iniziativa_id
             else ""
         )
+        + (f" &nbsp;{chips}" if chips else "")
         + "</small>",
         unsafe_allow_html=True,
     )
@@ -128,6 +140,30 @@ def task_dialog(
         )
         deliverable_id = d_sel.id if d_sel else None
 
+    # etichette (label)
+    from src.data import etichetta_repo
+
+    etichette = etichetta_repo.list_etichette()
+    et_by_id = {str(e["id"]): e for e in etichette}
+    et_scelte = st.multiselect(
+        "Etichette",
+        options=list(et_by_id),
+        default=etichetta_repo.etichette_task(task.id),
+        format_func=lambda i: et_by_id[i]["nome"],
+    )
+
+    # dipendenze: questo task dipende da…
+    altri = [
+        t for t in task_repo.list_tasks(include_archiviati=False) if t.id != task.id
+    ]
+    dip_by_id = {str(t.id): t for t in altri}
+    dip_scelte = st.multiselect(
+        "Dipende da (task che devono precedere)",
+        options=list(dip_by_id),
+        default=etichetta_repo.dipendenze_task(task.id),
+        format_func=lambda i: dip_by_id[i].titolo,
+    )
+
     note = st.text_area("Descrizione / note", value=task.descrizione or "")
     b1, b2 = st.columns(2)
     if b1.button("💾 Salva", type="primary", use_container_width=True):
@@ -139,6 +175,8 @@ def task_dialog(
             deliverable_id=deliverable_id,
             descrizione=note or None,
         )
+        etichetta_repo.set_etichette_task(task.id, et_scelte)
+        etichetta_repo.set_dipendenze_task(task.id, dip_scelte)
         st.rerun()
     if b2.button("🗂 Archivia", use_container_width=True):
         task_repo.update_task(task.id, archiviato=True)
@@ -180,7 +218,7 @@ def form_nuovo_task(
             ini = f4.selectbox(
                 "Progetto (opz.)",
                 [None] + iniziative,
-                format_func=lambda i: ("—" if i is None else etichetta_progetto(i)),
+                format_func=lambda i: ("—" if i is None else etichetta_con_tag(i)),
             )
         else:
             ini = None

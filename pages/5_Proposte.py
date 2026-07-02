@@ -17,7 +17,6 @@ from src.domain.economia import (
     PianoPersona,
     capacity_per_persona,
     rollup_personale,
-    valore_atteso,
 )
 from src.domain.models import CATEGORIE_BUDGET, RuoloSistema
 from src.lib.labels import etichetta_progetto, getf
@@ -27,10 +26,13 @@ is_admin = persona.ruolo_sistema == RuoloSistema.admin
 
 st.title("Proposte")
 
-# --- Pipeline pesata ---------------------------------------------------------
+# --- Elenco proposte ---------------------------------------------------------
 proposte = iniziativa_repo.list_iniziative(tipo="proposta")
 if not is_admin:
     proposte = [p for p in proposte if p.responsabile_id == persona.id]
+
+persone = persona_repo.list_persone(solo_attivi=True)
+nomi = {p.id: p.nome_completo for p in persona_repo.list_persone()}
 
 if proposte:
     pipe = pd.DataFrame(
@@ -42,22 +44,17 @@ if proposte:
                 "Ente finanziatore": getf(p, "controparte") or "",
                 "Stato": p.stato,
                 "Budget €": float(p.budget_totale or 0),
-                "P(successo)": float(p.probabilita_successo or 0),
-                "Valore atteso €": float(
-                    valore_atteso(p.budget_totale, p.probabilita_successo)
-                ),
+                "Responsabile": nomi.get(p.responsabile_id, "—"),
             }
             for p in proposte
         ]
     )
     st.dataframe(pipe, hide_index=True, use_container_width=True)
     vive = [p for p in proposte if p.stato in ("bozza", "inviata")]
-    tot_atteso = sum(
-        valore_atteso(p.budget_totale, p.probabilita_successo) for p in vive
-    )
+    tot_budget = sum(float(p.budget_totale or 0) for p in vive)
     st.caption(
-        f"Pipeline attiva (bozza+inviata): **{len(vive)}** proposte, "
-        f"valore atteso **{tot_atteso:,.2f} €**"
+        f"Proposte attive (bozza+inviata): **{len(vive)}**, "
+        f"budget totale **{tot_budget:,.2f} €**"
     )
 else:
     st.info("Nessuna proposta.")
@@ -76,10 +73,7 @@ if is_admin:
             )
             inizio = c4.date_input("Inizio previsto", value=date.today())
             fine = c5.date_input("Fine prevista", value=date.today())
-            c6, c7 = st.columns(2)
-            budget = c6.number_input("Budget totale €", min_value=0.0, step=1000.0)
-            prob = c7.slider("Probabilità di successo", 0.0, 1.0, 0.5, 0.05)
-            persone = persona_repo.list_persone(solo_attivi=True)
+            budget = st.number_input("Budget totale €", min_value=0.0, step=1000.0)
             resp = st.selectbox(
                 "Responsabile (PM)",
                 options=[None] + persone,
@@ -99,10 +93,61 @@ if is_admin:
                         data_inizio=inizio,
                         data_fine=fine,
                         budget_totale=budget or None,
-                        probabilita_successo=prob,
                         responsabile_id=resp.id if resp else None,
                     )
                     st.success("Proposta creata.")
+                    st.rerun()
+
+    # --- Modifica proposta selezionata -------------------------------------
+    if proposte:
+        with st.expander("✏️ Modifica proposta"):
+            ep = st.selectbox(
+                "Proposta da modificare",
+                proposte,
+                format_func=lambda p: f"[{p.stato}] {etichetta_progetto(p)}",
+                key="edit_sel",
+            )
+            with st.form("modifica_proposta"):
+                m1, m2, m3 = st.columns([2, 1, 1])
+                e_tit = m1.text_input("Titolo", value=ep.titolo)
+                e_acr = m2.text_input("Acronimo", value=getf(ep, "acronimo") or "")
+                e_cod = m3.text_input("Identificativo", value=ep.codice or "")
+                m4, m5, m6 = st.columns(3)
+                e_ente = m4.text_input(
+                    "Ente finanziatore / Cliente", value=ep.controparte or ""
+                )
+                e_ini = m5.date_input("Inizio", value=ep.data_inizio)
+                e_fine = m6.date_input("Fine", value=ep.data_fine)
+                m7, m8 = st.columns(2)
+                e_budget = m7.number_input(
+                    "Budget €",
+                    min_value=0.0,
+                    step=1000.0,
+                    value=float(ep.budget_totale or 0),
+                )
+                idx_r = next(
+                    (i for i, p in enumerate(persone) if p.id == ep.responsabile_id),
+                    None,
+                )
+                e_resp = m8.selectbox(
+                    "Responsabile (PM)",
+                    [None] + persone,
+                    index=(idx_r + 1) if idx_r is not None else 0,
+                    format_func=lambda p: "—" if p is None else p.nome_completo,
+                )
+                if st.form_submit_button("Salva modifiche", type="primary"):
+                    iniziativa_repo.update_iniziativa(
+                        ep.id,
+                        titolo=e_tit,
+                        acronimo=e_acr or None,
+                        codice=e_cod or None,
+                        controparte=e_ente or None,
+                        data_inizio=e_ini,
+                        data_fine=e_fine,
+                        budget_totale=e_budget or None,
+                        responsabile_id=e_resp.id if e_resp else None,
+                    )
+                    st.success("Proposta aggiornata.")
                     st.rerun()
 
 # --- Dettaglio proposta -----------------------------------------------------------
@@ -331,23 +376,13 @@ if proposte:
     # ---- Stato + conversione ----------------------------------------------------
     with tab_stato:
         if is_admin:
-            c1, c2 = st.columns(2)
-            nuovo_stato = c1.selectbox(
+            nuovo_stato = st.selectbox(
                 "Stato",
                 ["bozza", "inviata", "approvata", "rifiutata"],
                 index=["bozza", "inviata", "approvata", "rifiutata"].index(sel.stato),
             )
-            nuova_prob = c2.slider(
-                "Probabilità",
-                0.0,
-                1.0,
-                float(sel.probabilita_successo or 0.5),
-                0.05,
-            )
             if st.button("Salva stato"):
-                iniziativa_repo.update_iniziativa(
-                    sel.id, stato=nuovo_stato, probabilita_successo=nuova_prob
-                )
+                iniziativa_repo.update_iniziativa(sel.id, stato=nuovo_stato)
                 st.rerun()
             st.divider()
             st.markdown(

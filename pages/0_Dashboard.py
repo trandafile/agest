@@ -158,6 +158,18 @@ with tab2:
     st.caption("Task e subtask di cui sei supervisor.")
     _render_scope(supervisionati, "sup")
 
+# --- Proposte/progetti di cui sono responsabile -----------------------------
+mie_iniziative = [i for i in iniziative if i.responsabile_id == persona.id]
+if mie_iniziative:
+    st.divider()
+    st.subheader("📌 Progetti/proposte di cui sei responsabile")
+    for i in mie_iniziative:
+        tag = "📝 Proposta" if i.tipo == "proposta" else "📊 Progetto"
+        st.markdown(
+            f"- {tag} · **{etichetta_progetto(i)}** — stato: {i.stato}"
+            + (f" · budget {float(i.budget_totale):,.0f} €" if i.budget_totale else "")
+        )
+
 # --- Analisi carico di lavoro (admin/pm) ------------------------------------
 if persona.ruolo_sistema in (RuoloSistema.admin, RuoloSistema.pm):
     st.divider()

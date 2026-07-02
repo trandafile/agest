@@ -9,20 +9,27 @@ from datetime import date
 import streamlit as st
 
 from src.auth.session import require_login
-from src.data import deliverable_repo, iniziativa_repo, persona_repo, task_repo
+from src.data import (
+    deliverable_repo,
+    etichetta_repo,
+    iniziativa_repo,
+    persona_repo,
+    task_repo,
+)
 from src.domain.models import STATO_TASK_BADGE, RuoloSistema
-from src.lib.labels import etichetta_progetto
+from src.lib.labels import etichetta_con_tag, etichetta_progetto
 from src.ui.task_ui import STATO_BADGE_D, form_nuovo_task, riga_task
 
 persona = require_login()
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
+puo_gestire_deliv = persona.ruolo_sistema in (RuoloSistema.admin, RuoloSistema.pm)
 
 st.title("Task e deliverable")
 
 persone = persona_repo.list_persone(solo_attivi=True)
 nomi = {p.id: p.nome_completo for p in persona_repo.list_persone()}
 iniziative = iniziativa_repo.list_iniziative()
-titoli_ini = {i.id: etichetta_progetto(i) for i in iniziative}
+titoli_ini = {i.id: etichetta_con_tag(i) for i in iniziative}
 
 vista = st.radio("Vista", ["🌳 Albero per progetto", "📋 Elenco"], horizontal=True)
 
@@ -84,8 +91,20 @@ if filtro_persona:
 _key = lambda x: (x.scadenza or date(9999, 12, 31), x.titolo)  # noqa: E731
 
 
+_et_map = etichetta_repo.etichette_by_task()
+
+
 def _render_task_con_figli(t, prefix, indent=False):
-    riga_task(t, nomi, titoli_ini, persona, is_admin, key_prefix=prefix, indent=indent)
+    riga_task(
+        t,
+        nomi,
+        titoli_ini,
+        persona,
+        is_admin,
+        key_prefix=prefix,
+        indent=indent,
+        etichette_map=_et_map,
+    )
     figli = [s for s in tasks if s.parent_task_id == t.id]
     for s in sorted(figli, key=_key):
         riga_task(
@@ -96,6 +115,7 @@ def _render_task_con_figli(t, prefix, indent=False):
             is_admin,
             key_prefix=f"{prefix}_s",
             indent=True,
+            etichette_map=_et_map,
         )
 
 
@@ -117,7 +137,7 @@ if vista.startswith("🌳"):
         if not ini_tasks and not delivs:
             continue
         with st.expander(f"📁 {titoli_ini[ini.id]}", expanded=bool(filtro_ini)):
-            if is_admin:
+            if puo_gestire_deliv:
                 with st.expander("➕ Nuovo deliverable"):
                     with st.form(f"nd_{ini.id}", clear_on_submit=True):
                         dc1, dc2, dc3 = st.columns([3, 1, 1])

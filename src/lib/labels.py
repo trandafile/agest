@@ -38,6 +38,12 @@ def etichetta_progetto(i: Any) -> str:
     return f"{prefisso} · {titolo}" if prefisso else titolo
 
 
+def etichetta_con_tag(i: Any) -> str:
+    """Come `etichetta_progetto`, ma antepone «📝 Proposta:» se è una proposta."""
+    tag = "📝 Proposta: " if getattr(i, "tipo", None) == "proposta" else ""
+    return tag + etichetta_progetto(i)
+
+
 _TIPO_CONTRATTO_LABEL = {
     "tempo_determinato": "Tempo determinato",
     "tempo_indeterminato": "Tempo indeterminato",

@@ -12,7 +12,13 @@ import pandas as pd
 import streamlit as st
 
 from src.auth.session import require_role
-from src.data import finanza_repo, iniziativa_repo, progetti_repo
+from src.data import (
+    deliverable_repo,
+    etichetta_repo,
+    finanza_repo,
+    iniziativa_repo,
+    progetti_repo,
+)
 from src.domain.economia import (
     PianoPersona,
     consuntivo_personale,
@@ -379,19 +385,44 @@ with tab_ms:
         )
         if is_admin:
             m_sel = st.selectbox(
-                "Aggiorna stato milestone",
+                "Gestisci milestone",
                 options=[None] + ms,
                 format_func=lambda m: "—" if m is None else m.titolo,
             )
             if m_sel:
-                nuovo = st.selectbox(
+                gc1, gc2 = st.columns([2, 1])
+                nuovo = gc1.selectbox(
                     "Nuovo stato",
                     ["prevista", "completata", "slittata"],
                     index=["prevista", "completata", "slittata"].index(m_sel.stato),
                 )
-                if st.button("Aggiorna"):
+                if gc1.button("Aggiorna stato"):
                     progetti_repo.set_stato_milestone(m_sel.id, nuovo)
                     st.rerun()
+                if gc2.button("🗑 Elimina milestone", type="secondary"):
+                    progetti_repo.delete_milestone(m_sel.id)
+                    st.rerun()
+
+                # associazione deliverable del progetto alla milestone
+                delivs = deliverable_repo.list_deliverables(sel.id)
+                if delivs:
+                    attuali = etichetta_repo.deliverable_di_milestone(m_sel.id)
+                    scelti = st.multiselect(
+                        "Deliverable raccolti da questa milestone",
+                        options=[str(d.id) for d in delivs],
+                        default=[a for a in attuali],
+                        format_func=lambda i: next(
+                            (d.titolo for d in delivs if str(d.id) == i), i
+                        ),
+                    )
+                    if st.button("Salva deliverable milestone"):
+                        etichetta_repo.set_deliverable_milestone(m_sel.id, scelti)
+                        st.success("Associazione salvata.")
+                        st.rerun()
+                else:
+                    st.caption(
+                        "Nessun deliverable nel progetto: creali nella pagina Task."
+                    )
     else:
         st.info("Nessuna milestone.")
 
