@@ -20,6 +20,7 @@ from src.domain.economia import (
     rollup_personale,
 )
 from src.domain.models import RuoloSistema
+from src.lib.labels import etichetta_progetto, getf
 
 persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
@@ -38,10 +39,10 @@ st.dataframe(
     pd.DataFrame(
         [
             {
-                "Acronimo": p.acronimo or "",
-                "Identificativo": p.codice or "",
+                "Acronimo": getf(p, "acronimo") or "",
+                "Identificativo": getf(p, "codice") or "",
                 "Titolo": p.titolo,
-                "Ente finanziatore": p.controparte or "",
+                "Ente finanziatore": getf(p, "controparte") or "",
                 "Stato": "🟢 attivo" if p.stato == "attivo" else "⚫ chiuso",
                 "Inizio": f"{p.data_inizio:%d/%m/%Y}" if p.data_inizio else "",
                 "Fine": f"{p.data_fine:%d/%m/%Y}" if p.data_fine else "",
@@ -57,7 +58,7 @@ st.dataframe(
 sel = st.selectbox(
     "Dettaglio progetto",
     options=progetti,
-    format_func=lambda p: f"[{p.stato}] {p.etichetta}",
+    format_func=lambda p: f"[{p.stato}] {etichetta_progetto(p)}",
 )
 alla_data = sel.data_inizio or date.today()
 

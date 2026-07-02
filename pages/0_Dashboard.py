@@ -13,6 +13,7 @@ import streamlit as st
 from src.auth.session import require_login
 from src.data import iniziativa_repo, persona_repo, task_repo
 from src.domain.models import RuoloSistema, Task
+from src.lib.labels import etichetta_progetto
 from src.ui.task_ui import riga_task
 
 persona = require_login()
@@ -25,7 +26,7 @@ tutti = task_repo.list_tasks(include_archiviati=True)
 persone = persona_repo.list_persone()
 nomi = {p.id: p.nome_completo for p in persone}
 iniziative = iniziativa_repo.list_iniziative()
-titoli_ini = {i.id: i.etichetta for i in iniziative}
+titoli_ini = {i.id: etichetta_progetto(i) for i in iniziative}
 
 # --- Metriche personali (come MAIC tasks) -----------------------------------
 miei_tutti = [t for t in tutti if t.owner_id == persona.id and t.stato != "annullato"]

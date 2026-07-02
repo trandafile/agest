@@ -22,6 +22,7 @@ from src.domain.finanza import (
     tabella_rendicontazione,
 )
 from src.domain.models import CATEGORIE_BUDGET, RuoloSistema
+from src.lib.labels import etichetta_progetto
 
 persona = require_role(RuoloSistema.admin)
 UTENTE = st.session_state.get("user_email")
@@ -29,7 +30,7 @@ UTENTE = st.session_state.get("user_email")
 st.title("Finanza")
 
 iniziative = iniziativa_repo.list_iniziative()
-ini_by_label = {i.etichetta: i for i in iniziative}
+ini_by_label = {etichetta_progetto(i): i for i in iniziative}
 
 tab_imp, tab_mov, tab_doc, tab_spese, tab_dash, tab_exp, tab_audit = st.tabs(
     [
@@ -193,7 +194,7 @@ with tab_mov:
     )
     movimenti = finanza_repo.list_movimenti(anno_m)
     if movimenti:
-        titolo_ini = {str(i.id): i.etichetta for i in iniziative}
+        titolo_ini = {str(i.id): etichetta_progetto(i) for i in iniziative}
         st.dataframe(
             pd.DataFrame(
                 [
@@ -244,7 +245,7 @@ with tab_doc:
     )
     documenti = finanza_repo.list_documenti(anno_d)
     if documenti:
-        titolo_ini = {str(i.id): i.etichetta for i in iniziative}
+        titolo_ini = {str(i.id): etichetta_progetto(i) for i in iniziative}
         st.dataframe(
             pd.DataFrame(
                 [
@@ -316,7 +317,7 @@ with tab_spese:
             st.rerun()
     spese = finanza_repo.list_spese()
     if spese:
-        titolo_ini = {str(i.id): i.etichetta for i in iniziative}
+        titolo_ini = {str(i.id): etichetta_progetto(i) for i in iniziative}
         st.dataframe(
             pd.DataFrame(
                 [

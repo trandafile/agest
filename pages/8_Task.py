@@ -10,6 +10,7 @@ import streamlit as st
 from src.auth.session import require_login
 from src.data import iniziativa_repo, persona_repo, task_repo
 from src.domain.models import STATO_TASK_BADGE, RuoloSistema
+from src.lib.labels import etichetta_progetto
 from src.ui.task_ui import form_nuovo_task, riga_task
 
 persona = require_login()
@@ -20,7 +21,7 @@ st.title("Task")
 persone = persona_repo.list_persone(solo_attivi=True)
 nomi = {p.id: p.nome_completo for p in persona_repo.list_persone()}
 iniziative = iniziativa_repo.list_iniziative()
-titoli_ini = {i.id: i.etichetta for i in iniziative}
+titoli_ini = {i.id: etichetta_progetto(i) for i in iniziative}
 
 with st.expander("➕ Nuovo task"):
     form_nuovo_task(persone, iniziative, default_owner=persona)

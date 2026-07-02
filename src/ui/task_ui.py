@@ -15,6 +15,7 @@ from src.domain.models import (
     Persona,
     Task,
 )
+from src.lib.labels import etichetta_progetto
 
 
 def scadenza_chip(scadenza: date | None) -> str:
@@ -150,7 +151,7 @@ def form_nuovo_task(
             ini = f4.selectbox(
                 "Progetto (opz.)",
                 [None] + iniziative,
-                format_func=lambda i: ("—" if i is None else i.etichetta),
+                format_func=lambda i: ("—" if i is None else etichetta_progetto(i)),
             )
         else:
             ini = None

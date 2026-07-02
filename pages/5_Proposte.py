@@ -20,6 +20,7 @@ from src.domain.economia import (
     valore_atteso,
 )
 from src.domain.models import CATEGORIE_BUDGET, RuoloSistema
+from src.lib.labels import etichetta_progetto, getf
 
 persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
@@ -35,10 +36,10 @@ if proposte:
     pipe = pd.DataFrame(
         [
             {
-                "Acronimo": p.acronimo or "",
-                "Identificativo": p.codice or "",
+                "Acronimo": getf(p, "acronimo") or "",
+                "Identificativo": getf(p, "codice") or "",
                 "Titolo": p.titolo,
-                "Ente finanziatore": p.controparte or "",
+                "Ente finanziatore": getf(p, "controparte") or "",
                 "Stato": p.stato,
                 "Budget €": float(p.budget_totale or 0),
                 "P(successo)": float(p.probabilita_successo or 0),
@@ -110,7 +111,7 @@ if proposte:
     sel = st.selectbox(
         "Dettaglio proposta",
         options=proposte,
-        format_func=lambda p: f"[{p.stato}] {p.etichetta}",
+        format_func=lambda p: f"[{p.stato}] {etichetta_progetto(p)}",
     )
     alla_data = sel.data_inizio or date.today()
 
