@@ -237,6 +237,87 @@ with tab_mov:
 
 # --- Documenti -------------------------------------------------------------------
 with tab_doc:
+    with st.expander("📎 Archivio file (estratti conto e documenti PDF)"):
+        from src.lib import gdrive
+        from src.lib.archivio import salva_documento
+
+        if gdrive.configurato():
+            st.caption("✅ I file vengono salvati su **Google Drive**.")
+        else:
+            st.caption(
+                "⚠️ Google Drive non configurato: l'archiviazione online è "
+                "disattivata (istruzioni in «Import banca»)."
+            )
+        u1, u2, u3 = st.columns([2, 1, 1])
+        cat = u1.selectbox(
+            "Categoria",
+            ["estratto_conto", "documento_fiscale", "altro"],
+            format_func=lambda c: c.replace("_", " "),
+        )
+        u_anno = u2.selectbox(
+            "Anno",
+            range(date.today().year - 3, date.today().year + 1),
+            index=3,
+            key="arch_f_anno",
+        )
+        u_mese = u3.selectbox(
+            "Mese",
+            [None] + list(range(1, 13)),
+            format_func=lambda m: "—" if m is None else f"{m:02d}",
+            key="arch_f_mese",
+        )
+        f_up = st.file_uploader(
+            "PDF / XML / immagine",
+            type=["pdf", "xml", "png", "jpg", "jpeg"],
+            key="arch_f_up",
+        )
+        f_desc = st.text_input("Descrizione (opzionale)")
+        if f_up is not None and st.button(
+            "Conserva su Drive", key="arch_f_save", disabled=not gdrive.configurato()
+        ):
+            esito = salva_documento(
+                cat,
+                f_up.name,
+                f_up.getvalue(),
+                f_up.type,
+                anno=u_anno,
+                mese=u_mese,
+                descrizione=f_desc or None,
+                caricato_da=UTENTE,
+            )
+            if esito["gia_presente"]:
+                st.warning("File già presente in archivio.")
+            elif esito["errore"]:
+                st.error(esito["errore"])
+            else:
+                st.success(f"File salvato su [Google Drive]({esito['gdrive']}).")
+                st.rerun()
+
+        arch = finanza_repo.list_archivio()
+        if arch:
+            for r in arch:
+                a1, a2 = st.columns([6, 1])
+                per = (
+                    f"{r['mese']:02d}/{r['anno']}"
+                    if r["mese"] and r["anno"]
+                    else str(r["anno"] or "—")
+                )
+                a1.markdown(
+                    f"[{r['categoria'].replace('_', ' ')}] **{per}** · "
+                    f"{r['file_nome']}"
+                    + (f" · _{r['descrizione']}_" if r["descrizione"] else "")
+                    + (
+                        f" · [📂 Apri su Drive]({r['gdrive_url']})"
+                        if r["gdrive_url"]
+                        else ""
+                    )
+                )
+                if a2.button("🗑", key=f"delf_{r['id']}"):
+                    finanza_repo.delete_file_archivio(r["id"], eseguito_da=UTENTE)
+                    st.rerun()
+        else:
+            st.info("Nessun file in archivio.")
+
     anno_d = st.selectbox(
         "Anno",
         range(date.today().year - 3, date.today().year + 1),

@@ -11,6 +11,9 @@ python-dotenv>=1.0             # carica .env in sviluppo locale (DATABASE_URL)
 pandas>=2.2
 openpyxl>=3.1
 pypdf>=5.0                     # estrazione testo estratti conto PDF (best-effort)
+google-api-python-client>=2.0  # (opz.) upload estratti conto su Google Drive
+google-auth>=2.0               # (opz.) credenziali Google (OAuth / service account)
+google-auth-oauthlib>=1.2      # (opz., solo per scripts/gdrive_oauth.py) refresh token
 
 # Dev / test
 pytest>=8.3

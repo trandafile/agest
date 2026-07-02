@@ -565,6 +565,97 @@ def acronimi_by_iniziativa() -> dict:
     return {str(r["id"]): r["acronimo"] for r in rows}
 
 
+def salva_file_archivio(
+    categoria: str,
+    file_nome: str,
+    file_mime: str | None,
+    dati: bytes | None,
+    file_hash: str,
+    anno: int | None = None,
+    mese: int | None = None,
+    descrizione: str | None = None,
+    gdrive_url: str | None = None,
+    iniziativa_id: UUID | str | None = None,
+    documento_id: UUID | str | None = None,
+    caricato_da: str | None = None,
+) -> None:
+    db.execute(
+        """
+        insert into archivio_file
+            (categoria, anno, mese, descrizione, file_nome, file_mime, file_dati,
+             file_hash, gdrive_url, iniziativa_id, documento_id, caricato_da)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        on conflict (file_hash) do nothing
+        """,
+        (
+            categoria,
+            anno,
+            mese,
+            descrizione,
+            file_nome,
+            file_mime,
+            dati,
+            file_hash,
+            gdrive_url,
+            str(iniziativa_id) if iniziativa_id else None,
+            str(documento_id) if documento_id else None,
+            caricato_da,
+        ),
+        user_email=caricato_da,
+    )
+
+
+def file_archivio_esiste(file_hash: str) -> bool:
+    return (
+        db.query_one(
+            "select 1 as x from archivio_file where file_hash = %s", (file_hash,)
+        )
+        is not None
+    )
+
+
+def list_archivio(categoria: str | None = None, anno: int | None = None) -> list[dict]:
+    """Metadati dei file (senza i byte)."""
+    sql = (
+        "select id, categoria, anno, mese, descrizione, file_nome, file_mime, "
+        "gdrive_url, caricato_da, caricato_il, octet_length(file_dati) as bytes "
+        "from archivio_file"
+    )
+    cond, params = [], []
+    if categoria:
+        cond.append("categoria = %s")
+        params.append(categoria)
+    if anno:
+        cond.append("anno = %s")
+        params.append(anno)
+    if cond:
+        sql += " where " + " and ".join(cond)
+    sql += " order by anno desc nulls last, mese desc nulls last, caricato_il desc"
+    return db.query(sql, params)
+
+
+def get_file_archivio(file_id: UUID | str) -> tuple[bytes, str, str] | None:
+    row = db.query_one(
+        "select file_dati, file_nome, file_mime from archivio_file where id = %s",
+        (str(file_id),),
+    )
+    if not row:
+        return None
+    return (
+        bytes(row["file_dati"]),
+        row["file_nome"],
+        row["file_mime"] or "application/pdf",
+    )
+
+
+def delete_file_archivio(file_id: UUID | str, eseguito_da: str | None = None) -> None:
+    db.execute(
+        "delete from archivio_file where id = %s",
+        (str(file_id),),
+        user_email=eseguito_da,
+    )
+
+
 def svuota_dati_contabili(eseguito_da: str | None = None) -> dict:
     """Cancella movimenti bancari, previsti, spese periodiche e log import.
 

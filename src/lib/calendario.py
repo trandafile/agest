@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import calendar as _cal
-from datetime import date
+from datetime import date, timedelta
 
 TIPO_ICONA = {"task": "✅", "deliverable": "📦", "milestone": "🎯"}
 
@@ -60,3 +60,20 @@ def eventi_per_giorno(eventi: list[dict]) -> dict[date, list[dict]]:
     for e in eventi:
         out.setdefault(e["data"], []).append(e)
     return out
+
+
+def link_google_calendar(titolo: str, giorno: date, descrizione: str = "") -> str:
+    """URL «Aggiungi a Google Calendar» per un evento giornaliero.
+
+    Apre il calendario dell'utente già compilato (nessuna API/chiave).
+    """
+    from urllib.parse import urlencode
+
+    fine = giorno + timedelta(days=1)
+    params = {
+        "action": "TEMPLATE",
+        "text": titolo,
+        "dates": f"{giorno.strftime('%Y%m%d')}/{fine.strftime('%Y%m%d')}",
+        "details": descrizione or "",
+    }
+    return "https://calendar.google.com/calendar/render?" + urlencode(params)

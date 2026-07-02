@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
 import streamlit as st
 
 from src.auth.session import require_login
@@ -160,6 +161,15 @@ if vista.startswith("🌳"):
                             )
                             st.rerun()
 
+            with st.expander("➕ Nuovo task in questo progetto"):
+                form_nuovo_task(
+                    persone,
+                    iniziative,
+                    default_owner=persona,
+                    iniziativa_fissa=ini,
+                    key=f"ntp_{ini.id}",
+                )
+
             # deliverable con i loro task
             deliv_ids = set()
             for d in delivs:
@@ -183,9 +193,17 @@ if vista.startswith("🌳"):
                 ]
                 for t in sorted(d_tasks, key=_key):
                     _render_task_con_figli(t, f"d{d.id}")
-                if is_admin and st.button(
-                    "🗄 archivia deliverable", key=f"arch_d_{d.id}"
-                ):
+                dcol1, dcol2 = st.columns([3, 1])
+                with dcol1.expander(f"➕ task nel deliverable «{d.titolo}»"):
+                    form_nuovo_task(
+                        persone,
+                        iniziative,
+                        default_owner=persona,
+                        iniziativa_fissa=ini,
+                        deliverable_fissa=d,
+                        key=f"ntd_{d.id}",
+                    )
+                if is_admin and dcol2.button("🗄 archivia", key=f"arch_d_{d.id}"):
                     deliverable_repo.update_deliverable(d.id, archiviato=True)
                     st.rerun()
 
@@ -209,6 +227,34 @@ if vista.startswith("🌳"):
 # VISTA ELENCO (piatta)
 # =====================================================================
 else:
+    # Deliverable (elenco) — filtrati per progetto se selezionato
+    delivs_el = []
+    for ini in [filtro_ini] if filtro_ini else iniziative:
+        for d in deliverable_repo.list_deliverables(
+            ini.id, include_archiviati=mostra_archiviati
+        ):
+            delivs_el.append((ini, d))
+    if delivs_el:
+        st.markdown("**📦 Deliverable**")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Progetto": titoli_ini[ini.id],
+                        "Deliverable": d.titolo,
+                        "Tipo": d.tipo or "",
+                        "Stato": STATO_BADGE_D.get(d.stato, d.stato),
+                        "Scadenza": (f"{d.scadenza:%d/%m/%Y}" if d.scadenza else ""),
+                        "Owner": nomi.get(d.owner_id, ""),
+                    }
+                    for ini, d in delivs_el
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.divider()
+
     if not tasks:
         st.info("Nessun task con i filtri scelti.")
         st.stop()

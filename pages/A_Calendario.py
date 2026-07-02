@@ -7,15 +7,17 @@ from datetime import date
 import streamlit as st
 
 from src.auth.session import require_login
-from src.data import calendario_repo, persona_repo
+from src.data import calendario_repo, iniziativa_repo, persona_repo
 from src.domain.models import RuoloSistema
 from src.domain.timesheet import GIORNI_IT
 from src.lib.calendario import (
     TIPO_ICONA,
     build_ics,
     eventi_per_giorno,
+    link_google_calendar,
     settimane_mese,
 )
+from src.lib.labels import etichetta_con_tag
 
 persona = require_login()
 
@@ -47,10 +49,23 @@ else:
     filtro_p = persona
     c4.markdown(f"**Persona:** {persona.nome_completo}")
 
+iniziative = iniziativa_repo.list_iniziative()
+filtro_prog = st.selectbox(
+    "Progetto",
+    [None] + iniziative,
+    format_func=lambda i: "(tutti)" if i is None else etichetta_con_tag(i),
+)
+
 tutti = calendario_repo.eventi()
 eventi = [e for e in tutti if e["tipo"] in tipi]
 if filtro_p is not None:
     eventi = [e for e in eventi if e["owner_id"] == filtro_p.id]
+if filtro_prog is not None:
+    etichette_prog = {
+        (filtro_prog.acronimo or "").strip(),
+        (filtro_prog.titolo or "").strip(),
+    }
+    eventi = [e for e in eventi if (e.get("progetto") or "") in etichette_prog]
 
 # --- Griglia mensile ---------------------------------------------------------
 del_mese = [e for e in eventi if e["data"].year == anno and e["data"].month == mese]
@@ -104,10 +119,15 @@ if futuri:
         pag = " 💰" if e.get("pagamento") else ""
         delta = (e["data"] - oggi).days
         quando = "oggi" if delta == 0 else (f"tra {delta}g" if delta > 0 else "")
+        titolo_ev = f"{ic} {e['titolo']}" + (
+            f" [{e['progetto']}]" if e.get("progetto") else ""
+        )
+        gcal = link_google_calendar(titolo_ev, e["data"])
         col_a.markdown(
             f"- **{e['data']:%d/%m/%Y}** ({quando}) {ic} {e['titolo']}{pag}"
             + (f" · _{e['progetto']}_" if e.get("progetto") else "")
             + (f" · 👤 {nomi.get(e['owner_id'], '')}" if e.get("owner_id") else "")
+            + f" · [➕ Google Calendar]({gcal})"
         )
 else:
     col_a.info("Nessuna scadenza futura con i filtri scelti.")

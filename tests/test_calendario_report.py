@@ -8,7 +8,12 @@ from types import SimpleNamespace
 
 import openpyxl
 
-from src.lib.calendario import build_ics, eventi_per_giorno, settimane_mese
+from src.lib.calendario import (
+    build_ics,
+    eventi_per_giorno,
+    link_google_calendar,
+    settimane_mese,
+)
 from src.lib.report_attivita import report_markdown, tasks_xlsx
 
 
@@ -42,6 +47,13 @@ def test_build_ics():
     assert ics.count("BEGIN:VEVENT") == 2
     assert "DTSTART;VALUE=DATE:20260702" in ics
     assert "SUMMARY:📦 Consegna [RUSC]" in ics
+
+
+def test_link_google_calendar():
+    u = link_google_calendar("Task X", date(2026, 9, 15), "note")
+    assert u.startswith("https://calendar.google.com/calendar/render")
+    assert "action=TEMPLATE" in u
+    assert "20260915%2F20260916" in u  # DTSTART/DTEND (giorno successivo)
 
 
 def test_eventi_per_giorno():

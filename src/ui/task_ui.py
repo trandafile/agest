@@ -100,6 +100,11 @@ def task_dialog(
         f"Supervisor: {nomi.get(task.supervisor_id, '—')} · "
         f"Progetto: {titoli_iniziative.get(task.iniziativa_id, '—')}"
     )
+    if task.scadenza:
+        from src.lib.calendario import link_google_calendar
+
+        gcal = link_google_calendar(f"✅ {task.titolo}", task.scadenza)
+        st.markdown(f"[➕ Aggiungi a Google Calendar]({gcal})")
     if not can_edit:
         st.info(
             "Sola lettura: puoi modificare solo i task di cui sei owner/supervisor."
@@ -189,8 +194,15 @@ def form_nuovo_task(
     default_owner: Persona,
     parent: Task | None = None,
     key: str = "nuovo_task",
+    iniziativa_fissa=None,
+    deliverable_fissa=None,
 ) -> None:
-    """Form di creazione task (o subtask se `parent` è valorizzato)."""
+    """Form di creazione task.
+
+    - `parent`: crea un subtask sotto `parent`.
+    - `iniziativa_fissa`: progetto già scelto (nascondi il selettore).
+    - `deliverable_fissa`: deliverable già scelto (il task ci finisce dentro).
+    """
     with st.form(key, clear_on_submit=True):
         titolo = st.text_input("Titolo *")
         f1, f2, f3 = st.columns(3)
@@ -214,15 +226,21 @@ def form_nuovo_task(
             format_func=lambda p: PRIORITA_BADGE[p],
         )
         f4, f5 = st.columns(2)
-        if parent is None:
+        if parent is not None:
+            ini = None
+            f4.markdown(f"Subtask di: **{parent.titolo}**")
+        elif iniziativa_fissa is not None:
+            ini = iniziativa_fissa
+            contesto = etichetta_con_tag(iniziativa_fissa)
+            if deliverable_fissa is not None:
+                contesto += f" · 📦 {deliverable_fissa.titolo}"
+            f4.markdown(f"In: **{contesto}**")
+        else:
             ini = f4.selectbox(
                 "Progetto (opz.)",
                 [None] + iniziative,
                 format_func=lambda i: ("—" if i is None else etichetta_con_tag(i)),
             )
-        else:
-            ini = None
-            f4.markdown(f"Subtask di: **{parent.titolo}**")
         scad = f5.date_input("Scadenza (opz.)", value=None)
         desc = st.text_area("Descrizione (opz.)")
         if st.form_submit_button("Crea task", type="primary"):
@@ -235,6 +253,9 @@ def form_nuovo_task(
                     supervisor_id=sup.id if sup else None,
                     iniziativa_id=(
                         parent.iniziativa_id if parent else (ini.id if ini else None)
+                    ),
+                    deliverable_id=(
+                        deliverable_fissa.id if deliverable_fissa else None
                     ),
                     parent_task_id=parent.id if parent else None,
                     descrizione=desc or None,
