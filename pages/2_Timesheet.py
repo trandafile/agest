@@ -22,6 +22,7 @@ from src.domain.timesheet import (
     riga_valida,
     valida_griglia,
 )
+from src.lib.labels import getf
 from src.lib.rendiconto_xlsx import build_rendiconto_xlsx, nome_file
 
 persona = require_login()
@@ -280,14 +281,14 @@ with st.expander("📤 Export XLSX per rendicontazione (per progetto)"):
             mese=mese,
             cognome=sel_persona.cognome,
             nome=sel_persona.nome,
-            codice_fiscale=sel_persona.codice_fiscale,
+            codice_fiscale=getf(sel_persona, "codice_fiscale"),
             cup=info_p["cup"],
             soggetto_attuatore=st.secrets.get("app", {}).get(
                 "ragione_sociale", "ANTECNICA SRLS"
             ),
             titolo_progetto=info_p["titolo"],
             tipo_progetto=info_p["tipo_desc"],
-            monte_ore_annuo=sel_persona.monte_ore_annuo,
+            monte_ore_annuo=getf(sel_persona, "monte_ore_annuo", 1720),
             ore_ri=ore_ri,
             ore_ss=ore_ss,
             ore_altri_progetti=ore_altri,

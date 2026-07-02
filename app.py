@@ -11,6 +11,7 @@ import streamlit as st
 
 from src.auth.session import require_login, sidebar_utente
 from src.domain.models import RuoloSistema
+from src.lib.labels import versione_app
 
 st.set_page_config(page_title="ANTECNICA Gestionale", page_icon="🗂️", layout="wide")
 
@@ -60,6 +61,13 @@ def main() -> None:
 
     pagina = st.navigation(nav, position="sidebar", expanded=True)
     sidebar_utente(persona)
+
+    versione = versione_app()
+    if versione:
+        with st.sidebar:
+            st.markdown("<div style='flex:1'></div>", unsafe_allow_html=True)
+            st.caption(f"versione {versione}")
+
     pagina.run()
 
 

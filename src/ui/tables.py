@@ -9,6 +9,7 @@ import pandas as pd
 from src.domain.models import Persona, TariffaOraria
 from src.domain.tariffe import tariffa_vigente
 from src.lib.dates import formatta_data, oggi
+from src.lib.labels import contratto_descr
 
 
 def persone_dataframe(persone: list[Persona]) -> pd.DataFrame:
@@ -19,8 +20,8 @@ def persone_dataframe(persone: list[Persona]) -> pd.DataFrame:
                 "Cognome": p.cognome,
                 "Matricola": p.matricola or "",
                 "Email": p.email,
-                "Ruolo": p.ruolo_sistema.value,
-                "Contratto": p.contratto_descr,
+                "Ruolo": getattr(p.ruolo_sistema, "value", str(p.ruolo_sistema)),
+                "Contratto": contratto_descr(p),
                 "Attivo": "si" if p.attivo else "no",
             }
             for p in persone

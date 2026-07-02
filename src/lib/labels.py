@@ -8,7 +8,19 @@ schiantare la pagina, invece di sollevare AttributeError.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+_VERSION_FILE = Path(__file__).resolve().parents[2] / ".upload_version.txt"
+
+
+def versione_app() -> str:
+    """Versione del software da `.upload_version.txt` (scritta dallo script di
+    upload). Ritorna stringa vuota se il file non c'è."""
+    try:
+        return _VERSION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def getf(obj: Any, name: str, default: Any = None) -> Any:
@@ -24,3 +36,27 @@ def etichetta_progetto(i: Any) -> str:
     prefisso = getattr(i, "acronimo", None) or getattr(i, "codice", None)
     titolo = getattr(i, "titolo", "") or ""
     return f"{prefisso} · {titolo}" if prefisso else titolo
+
+
+_TIPO_CONTRATTO_LABEL = {
+    "tempo_determinato": "Tempo determinato",
+    "tempo_indeterminato": "Tempo indeterminato",
+    "socio": "Socio",
+}
+
+
+def contratto_descr(p: Any) -> str:
+    """Descrizione del contratto di una persona, tollerante a modelli vecchi
+    (campi contratto assenti -> «—»)."""
+    tipo = getattr(p, "tipo_contratto", None)
+    if not tipo:
+        return "—"
+    val = getattr(tipo, "value", None) or str(tipo)
+    base = _TIPO_CONTRATTO_LABEL.get(val, val)
+    da = getattr(p, "contratto_data_inizio", None)
+    al = getattr(p, "contratto_data_fine", None)
+    if da and al:
+        return f"{base} ({da:%d/%m/%Y}→{al:%d/%m/%Y})"
+    if da:
+        return f"{base} (dal {da:%d/%m/%Y})"
+    return base

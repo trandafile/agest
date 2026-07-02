@@ -9,6 +9,7 @@ import streamlit as st
 from src.auth.session import require_role
 from src.data import persona_repo, tariffa_repo
 from src.domain.models import TIPO_CONTRATTO_LABEL, RuoloSistema, TipoContratto
+from src.lib.labels import getf
 from src.ui.tables import persone_dataframe, tariffe_dataframe
 
 persona = require_role(RuoloSistema.admin)
@@ -95,12 +96,14 @@ if persone:
             m_matricola = c3.text_input("Matricola", value=sel.matricola or "")
             m_attivo = c4.checkbox("Attivo", value=sel.attivo)
             c5, c6 = st.columns(2)
-            m_cf = c5.text_input("Codice fiscale", value=sel.codice_fiscale or "")
+            m_cf = c5.text_input(
+                "Codice fiscale", value=getf(sel, "codice_fiscale") or ""
+            )
             m_monte = c6.number_input(
                 "Monte ore annuo",
                 min_value=0,
                 step=10,
-                value=int(sel.monte_ore_annuo or 1720),
+                value=int(getf(sel, "monte_ore_annuo", 1720) or 1720),
             )
             m_ruolo = st.selectbox(
                 "Ruolo",
@@ -110,14 +113,20 @@ if persone:
             )
             st.markdown("**Contratto**")
             k1, k2, k3 = st.columns(3)
-            idx_c = _CONTRATTI.index(sel.tipo_contratto) if sel.tipo_contratto else 0
+            idx_c = (
+                _CONTRATTI.index(getf(sel, "tipo_contratto"))
+                if getf(sel, "tipo_contratto") in _CONTRATTI
+                else 0
+            )
             m_tipo = k1.selectbox(
                 "Tipologia", _CONTRATTI, index=idx_c, format_func=_fmt_contratto
             )
-            m_inizio = k2.date_input("Data inizio", value=sel.contratto_data_inizio)
+            m_inizio = k2.date_input(
+                "Data inizio", value=getf(sel, "contratto_data_inizio")
+            )
             m_fine = k3.date_input(
                 "Data fine (solo tempo determinato)",
-                value=sel.contratto_data_fine,
+                value=getf(sel, "contratto_data_fine"),
             )
             if st.form_submit_button("Salva modifiche", type="primary"):
                 if m_tipo == TipoContratto.tempo_determinato and not (

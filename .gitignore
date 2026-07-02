@@ -16,11 +16,11 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
-# Script di upload
-.upload_version.txt
+# Nota: .upload_version.txt è VOLUTAMENTE tracciato (mostra la versione in app).
 
 # OS
 .DS_Store
 Thumbs.db
+hipa/
 hipa/
 hipa/

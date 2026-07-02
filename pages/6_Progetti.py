@@ -130,13 +130,17 @@ with tab_fin:
     g1, g2, g3 = st.columns(3)
     g1.metric(
         "Costo complessivo",
-        f"{float(sel.costo_complessivo):,.0f} €" if sel.costo_complessivo else "—",
+        (
+            f"{float(getf(sel, 'costo_complessivo') or 0):,.0f} €"
+            if getf(sel, "costo_complessivo")
+            else "—"
+        ),
     )
     g2.metric(
         "Finanziamento",
         (
-            f"{float(sel.finanziamento_complessivo):,.0f} €"
-            if sel.finanziamento_complessivo
+            f"{float(getf(sel, 'finanziamento_complessivo') or 0):,.0f} €"
+            if getf(sel, "finanziamento_complessivo")
             else "—"
         ),
     )
@@ -158,13 +162,13 @@ with tab_fin:
                 "Costo complessivo €",
                 min_value=0.0,
                 step=1000.0,
-                value=float(sel.costo_complessivo or 0),
+                value=float(getf(sel, "costo_complessivo") or 0),
             )
             n_finanz = f2.number_input(
                 "Finanziamento complessivo €",
                 min_value=0.0,
                 step=1000.0,
-                value=float(sel.finanziamento_complessivo or 0),
+                value=float(getf(sel, "finanziamento_complessivo") or 0),
             )
             if st.form_submit_button("Salva info finanziarie"):
                 iniziativa_repo.update_iniziativa(
@@ -248,10 +252,10 @@ with tab_rend:
                 "Ente finanziatore / Cliente", value=sel.controparte or ""
             )
             r1, r2 = st.columns(2)
-            n_cup = r1.text_input("CUP del progetto", value=sel.cup or "")
+            n_cup = r1.text_input("CUP del progetto", value=getf(sel, "cup") or "")
             n_tipo = r2.text_input(
                 "Tipo del progetto",
-                value=sel.tipo_progetto_desc or "",
+                value=getf(sel, "tipo_progetto_desc") or "",
                 placeholder="es. Ricerca Industriale e Sviluppo Sperimentale",
             )
             if st.form_submit_button("Salva dati", type="primary"):
@@ -283,8 +287,8 @@ with tab_rend:
             st.rerun()
     else:
         st.markdown(
-            f"**CUP:** {sel.cup or '—'}  \n"
-            f"**Tipo progetto:** {sel.tipo_progetto_desc or '—'}"
+            f"**CUP:** {getf(sel, 'cup') or '—'}  \n"
+            f"**Tipo progetto:** {getf(sel, 'tipo_progetto_desc') or '—'}"
         )
 
 with tab_quote:

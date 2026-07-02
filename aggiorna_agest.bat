@@ -129,6 +129,9 @@ if not "%LAST_VERSION%"=="" (
 set /p VERSION_NAME=Inserisci nome versione (INVIO per automatico: %SUGGESTED_VERSION%):
 if "%VERSION_NAME%"=="" set "VERSION_NAME=%SUGGESTED_VERSION%"
 > "%VERSION_FILE%" echo %VERSION_NAME%
+REM Ri-stage del file versione (scritto DOPO il primo git add -A) così la
+REM versione corrente finisce nel commit ed e' visibile nell'app.
+git add "%VERSION_FILE%" >nul 2>&1
 echo [*] Versione salvata in %VERSION_FILE%: %VERSION_NAME%
 echo [*] Versione in upload: %VERSION_NAME%
 

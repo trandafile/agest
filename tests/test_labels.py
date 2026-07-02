@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from src.lib.labels import etichetta_progetto, getf
+from datetime import date
+
+from src.lib.labels import contratto_descr, etichetta_progetto, getf
 
 
 class _Vecchio:
@@ -39,3 +41,26 @@ def test_getf_sicuro():
     assert getf(v, "acronimo") is None
     assert getf(v, "costo_complessivo", 0) == 0
     assert getf(v, "titolo") == "Progetto Storico"
+
+
+def test_contratto_descr_degrada_su_modello_vecchio():
+    # persona "vecchia" senza campi contratto -> nessun crash
+    assert contratto_descr(_Vecchio()) == "—"
+
+
+def test_contratto_descr_completo():
+    class P:
+        tipo_contratto = "tempo_determinato"
+        contratto_data_inizio = date(2026, 1, 1)
+        contratto_data_fine = date(2026, 12, 31)
+
+    assert contratto_descr(P()) == "Tempo determinato (01/01/2026→31/12/2026)"
+
+
+def test_contratto_descr_solo_inizio():
+    class P:
+        tipo_contratto = "tempo_indeterminato"
+        contratto_data_inizio = date(2025, 3, 1)
+        contratto_data_fine = None
+
+    assert contratto_descr(P()) == "Tempo indeterminato (dal 01/03/2025)"
