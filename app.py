@@ -46,8 +46,15 @@ def main() -> None:
         blocco_gestione.append(
             st.Page("pages/6_Progetti.py", title="Progetti", icon="📊")
         )
+
+    # Report e gestione utenti
+    blocco_report: list[st.Page] = []
+    if admin_pm:
+        blocco_report.append(
+            st.Page("pages/B_Report.py", title="Report dipendenti", icon="📈")
+        )
     if admin:
-        blocco_gestione.append(
+        blocco_report.append(
             st.Page("pages/1_Anagrafica.py", title="Anagrafica", icon="👤")
         )
 
@@ -56,6 +63,8 @@ def main() -> None:
     nav["Attività"] = blocco_attivita
     if blocco_gestione:
         nav["Gestione"] = blocco_gestione
+    if blocco_report:
+        nav["Report e gestione utenti"] = blocco_report
     if admin:
         nav["Finanza"] = [
             st.Page("pages/7_Finanza.py", title="Finanza", icon="💶"),

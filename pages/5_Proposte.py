@@ -150,6 +150,25 @@ if is_admin:
                     st.success("Proposta aggiornata.")
                     st.rerun()
 
+            st.divider()
+            st.markdown("**Elimina proposta**")
+            st.caption(
+                "Rimuove la proposta e i dati collegati (assegnazioni, WP, "
+                "voci di budget, task/deliverable). Irreversibile."
+            )
+            conferma_del = st.checkbox(
+                f"Confermo l'eliminazione di «{ep.titolo}»", key="del_prop_conf"
+            )
+            if st.button(
+                "🗑 Elimina proposta", disabled=not conferma_del, type="secondary"
+            ):
+                try:
+                    iniziativa_repo.delete_iniziativa(ep.id)
+                    st.success("Proposta eliminata.")
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Errore: {exc}")
+
 # --- Dettaglio proposta -----------------------------------------------------------
 if proposte:
     st.divider()
