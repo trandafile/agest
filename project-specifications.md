@@ -18,6 +18,14 @@
 
 Principio architetturale portante: **Proposte e Progetti sono la stessa entità (`iniziativa`) in due stati diversi.** Questo rende la conversione proposta→progetto automatica e permette il riuso del backbone (persone, ore, budget) sia per l'esecuzione sia, in futuro, per i task.
 
+> **Terminologia UI (07/2026).** A DB l'entità resta `iniziativa` (per non
+> duplicare Proposte/Progetti), ma **nell'interfaccia è etichettata «Progetto»**
+> (o «Proposta»/«Commessa» a seconda del contesto). I campi sono allineati a
+> MAIC tasks `projects` per una futura integrazione: `acronimo`=acronym,
+> `codice`=identifier, `controparte`=funding_agency (ente finanziatore/cliente),
+> `titolo`=name. L'**acronimo** è anche la chiave di riconciliazione automatica
+> dei movimenti bancari (colonna «Progetto» del Google Sheet finanziario).
+
 ---
 
 ## 2. Stack tecnico
@@ -61,7 +69,15 @@ Nomi di dominio in italiano, codice in inglese dove naturale. Chiavi surrogate `
 `work_package_id` è **sempre nullable**: l'uso dei WP non è obbligatorio.
 
 ### Anagrafica e tariffe
-- **persona** — `id, nome, cognome, matricola, email, ruolo_sistema, attivo`
+- **persona** — `id, nome, cognome, matricola, email, ruolo_sistema, attivo,
+  codice_fiscale, monte_ore_annuo, tipo_contratto['tempo_determinato'|
+  'tempo_indeterminato'|'socio'], contratto_data_inizio, contratto_data_fine`
+  - `contratto_data_fine` ammessa **solo** per tempo determinato (check DB).
+  - Eliminazione persona: funzione DB `elimina_persona()` atomica — azzera i
+    riferimenti RESTRICT (responsabile progetti, approvatore assenze), traccia
+    in audit e rimuove i dati propri (cascade). La UI mostra il riepilogo dei
+    dati collegati e sconsiglia l'eliminazione se ci sono mesi confermati
+    (meglio disattivare con `attivo=false`).
 - **tariffa_oraria** — `id, persona_id, valido_da, valido_al (null=aperto), importo_orario`
   - Tariffe **versionate nel tempo**: il costo delle ore va sempre calcolato con la tariffa vigente alla data dell'attività (requisito di rendicontazione).
 
@@ -209,6 +225,18 @@ Import del Google Sheet → tabelle finanza. Riconciliazione per commessa. Dashb
 - **Presenze v2**: foglio mensile con UNA riga per giorno (ingresso/uscita/
   ore/tipo/note) + selezione via pop-up dei **task lavorati** (informativo:
   NON fa fede per i timesheet).
+- **Sistema «Libro Cassa»** (dal Google Sheet ANTECNICA gestito via Apps
+  Script): import automatico del workbook (`src/lib/import_contabile.py`) che
+  riconosce i fogli «Libro Cassa <anno>» (header non in prima riga), i fogli
+  per-progetto (INFO GENERALI + CALENDARIO MOVIMENTI) e «Spese periodiche».
+  L'import è una-tantum, con richiesta esplicita di cancellare i dati
+  precedenti. Ogni progetto porta `costo_complessivo`, `finanziamento_
+  complessivo`, ente finanziatore, e i **movimenti previsti**
+  (`movimento_previsto`) che alimentano la proiezione di cassa. Export nel
+  medesimo formato XLSX (`src/lib/export_contabile.py`) per il round-trip col
+  foglio Google; `movimento_bancario.anno_riferimento` conserva l'anno del
+  foglio d'origine. Export diretto sul Google Sheet: predisposto, richiede un
+  service account Google (istruzioni nel tab Export della pagina Finanza).
 - **Finanza v2**: import del Google Sheet finanziario con **tracciato preset**
   (Data/Descrizione/N. Fattura/Tipo/Importo/Categoria/Progetto/Persona/Note,
   auto-riconciliazione per etichetta progetto); pagina **Import banca**

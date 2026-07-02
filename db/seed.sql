@@ -57,13 +57,15 @@ on conflict (data) do nothing;
 -- Progetto demo con assegnazioni (per avere righe reali nel timesheet)
 -- ---------------------------------------------------------------------
 insert into public.iniziativa
-  (tipo, stato, codice, titolo, controparte, data_inizio, data_fine,
+  (tipo, stato, codice, acronimo, titolo, controparte, data_inizio, data_fine,
    ore_totali, budget_totale, responsabile_id)
-select 'progetto', 'attivo', 'DEMO-01', 'Progetto dimostrativo',
+select 'progetto', 'attivo', 'DEMO-01', 'DEMO', 'Progetto dimostrativo',
        'Cliente Demo', date '2026-01-01', date '2026-12-31',
        800, 60000, p.id
 from public.persona p where p.email = 'luigi.boccia@antecnica.it'
 on conflict (codice) do nothing;
+update public.iniziativa set acronimo = 'DEMO'
+ where codice = 'DEMO-01' and acronimo is null;
 
 insert into public.assegnazione
   (iniziativa_id, persona_id, tipo_attivita, ore_pianificate, tetto_ore_mese)

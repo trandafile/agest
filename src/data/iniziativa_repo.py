@@ -11,6 +11,7 @@ _UPD_INIZIATIVA = {
     "tipo",
     "stato",
     "codice",
+    "acronimo",
     "titolo",
     "controparte",
     "responsabile_id",
@@ -23,15 +24,27 @@ _UPD_INIZIATIVA = {
     "note",
     "cup",
     "tipo_progetto_desc",
+    "costo_complessivo",
+    "finanziamento_complessivo",
 }
 
 # Tutte le colonne TRANNE il logo (bytea pesante: si carica solo on demand)
 _COLS = (
-    "id, tipo, stato, codice, titolo, controparte, responsabile_id, "
+    "id, tipo, stato, codice, acronimo, titolo, controparte, responsabile_id, "
     "tipo_attivita_default, data_inizio, data_fine, ore_totali, "
     "budget_totale, probabilita_successo, note, cup, tipo_progetto_desc, "
-    "created_at, updated_at"
+    "costo_complessivo, finanziamento_complessivo, created_at, updated_at"
 )
+
+
+def get_by_acronimo(acronimo: str) -> Iniziativa | None:
+    row = db.query_one(
+        f"select {_COLS} from iniziativa where lower(acronimo) = lower(%s) limit 1",
+        (acronimo.strip(),),
+    )
+    return _to_iniziativa(row) if row else None
+
+
 _UPD_ASSEGNAZIONE = {
     "work_package_id",
     "tipo_attivita",

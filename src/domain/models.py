@@ -21,6 +21,19 @@ class RuoloSistema(enum.StrEnum):
     dipendente = "dipendente"
 
 
+class TipoContratto(enum.StrEnum):
+    tempo_determinato = "tempo_determinato"
+    tempo_indeterminato = "tempo_indeterminato"
+    socio = "socio"
+
+
+TIPO_CONTRATTO_LABEL = {
+    "tempo_determinato": "Tempo determinato",
+    "tempo_indeterminato": "Tempo indeterminato",
+    "socio": "Socio",
+}
+
+
 class Persona(BaseModel):
     model_config = ConfigDict(use_enum_values=False)
 
@@ -33,8 +46,26 @@ class Persona(BaseModel):
     attivo: bool = True
     codice_fiscale: str | None = None
     monte_ore_annuo: int | None = 1720
+    tipo_contratto: TipoContratto | None = None
+    contratto_data_inizio: date | None = None
+    contratto_data_fine: date | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @property
+    def contratto_descr(self) -> str:
+        """Descrizione sintetica del contratto per tabelle/UI."""
+        if self.tipo_contratto is None:
+            return "—"
+        base = TIPO_CONTRATTO_LABEL[self.tipo_contratto.value]
+        if self.contratto_data_inizio and self.contratto_data_fine:
+            return (
+                f"{base} ({self.contratto_data_inizio:%d/%m/%Y}"
+                f"→{self.contratto_data_fine:%d/%m/%Y})"
+            )
+        if self.contratto_data_inizio:
+            return f"{base} (dal {self.contratto_data_inizio:%d/%m/%Y})"
+        return base
 
     @field_validator("email")
     @classmethod
@@ -70,12 +101,20 @@ class TipoAttivita(enum.StrEnum):
 
 
 class Iniziativa(BaseModel):
+    """Backbone Proposte/Progetti (stessa entità in stati diversi).
+
+    Nella UI è etichettata «Progetto» (o «Proposta» quando tipo='proposta').
+    Campi allineati a MAIC tasks `projects`: acronimo=acronym, codice=identifier,
+    controparte=funding_agency, titolo=name.
+    """
+
     id: UUID | None = None
     tipo: TipoIniziativa
     stato: str
-    codice: str | None = None
-    titolo: str
-    controparte: str | None = None
+    codice: str | None = None  # = Mtasks.identifier
+    acronimo: str | None = None  # = Mtasks.acronym
+    titolo: str  # = Mtasks.name
+    controparte: str | None = None  # = Mtasks.funding_agency (ente/cliente)
     responsabile_id: UUID | None = None
     tipo_attivita_default: str | None = None
     data_inizio: date | None = None
@@ -86,8 +125,16 @@ class Iniziativa(BaseModel):
     note: str | None = None
     cup: str | None = None
     tipo_progetto_desc: str | None = None
+    costo_complessivo: Decimal | None = None
+    finanziamento_complessivo: Decimal | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @property
+    def etichetta(self) -> str:
+        """Etichetta breve per selettori/tabelle: «ACRONIMO · Titolo»."""
+        prefisso = self.acronimo or self.codice
+        return f"{prefisso} · {self.titolo}" if prefisso else self.titolo
 
 
 class Assegnazione(BaseModel):

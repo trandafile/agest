@@ -165,7 +165,7 @@ riepilogo = pd.DataFrame(
             "Periodo": (f"{a.data_inizio:%d/%m/%y}" if a.data_inizio else "—")
             + " → "
             + (f"{a.data_fine:%d/%m/%y}" if a.data_fine else "—"),
-            "Ore iniziativa": (
+            "Ore progetto": (
                 f"{a.ore_totali_iniziativa:g}" if a.ore_totali_iniziativa else "—"
             ),
             "Totale mese": tot_riga[a.id],

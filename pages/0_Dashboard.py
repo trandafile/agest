@@ -25,7 +25,7 @@ tutti = task_repo.list_tasks(include_archiviati=True)
 persone = persona_repo.list_persone()
 nomi = {p.id: p.nome_completo for p in persone}
 iniziative = iniziativa_repo.list_iniziative()
-titoli_ini = {i.id: f"{i.codice or ''} {i.titolo}".strip() for i in iniziative}
+titoli_ini = {i.id: i.etichetta for i in iniziative}
 
 # --- Metriche personali (come MAIC tasks) -----------------------------------
 miei_tutti = [t for t in tutti if t.owner_id == persona.id and t.stato != "annullato"]
@@ -103,7 +103,7 @@ def _render_scope(selezionati: list[Task], key_prefix: str) -> None:
 
     ordinati = sorted(gruppi.items(), key=lambda kv: urgenza(kv[1]))
     for idx, (ini_id, tasks) in enumerate(ordinati):
-        titolo = titoli_ini.get(ini_id, "📌 Senza iniziativa")
+        titolo = titoli_ini.get(ini_id, "📌 Senza progetto")
         with st.expander(f"📁 {titolo} ({len(tasks)})", expanded=idx == 0):
             radici: dict = {}
             for t in tasks:

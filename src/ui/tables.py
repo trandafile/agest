@@ -20,6 +20,7 @@ def persone_dataframe(persone: list[Persona]) -> pd.DataFrame:
                 "Matricola": p.matricola or "",
                 "Email": p.email,
                 "Ruolo": p.ruolo_sistema.value,
+                "Contratto": p.contratto_descr,
                 "Attivo": "si" if p.attivo else "no",
             }
             for p in persone

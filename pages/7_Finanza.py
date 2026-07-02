@@ -29,7 +29,7 @@ UTENTE = st.session_state.get("user_email")
 st.title("Finanza")
 
 iniziative = iniziativa_repo.list_iniziative()
-ini_by_label = {f"{i.codice or ''} {i.titolo}".strip(): i for i in iniziative}
+ini_by_label = {i.etichetta: i for i in iniziative}
 
 tab_imp, tab_mov, tab_doc, tab_spese, tab_dash, tab_exp, tab_audit = st.tabs(
     [
@@ -56,9 +56,50 @@ def _leggi_file(file) -> pd.DataFrame | None:
 
 # --- Import -------------------------------------------------------------------
 with tab_imp:
+    st.subheader("📚 Import Libro Cassa (Google Sheet ANTECNICA)")
+    st.caption(
+        "Carica il file **«ANTECNICA gestione contabile».xlsx** esportato da "
+        "Google: riconosce da solo i fogli «Libro Cassa», i progetti e i "
+        "calendari. È un'operazione **una-tantum** (di norma già eseguita)."
+    )
+    lc_file = st.file_uploader(
+        "File Libro Cassa (.xlsx)", type=["xlsx"], key="libro_cassa"
+    )
+    if lc_file is not None:
+        from src.lib.import_contabile import leggi_workbook, riepilogo
+
+        try:
+            sezioni = leggi_workbook(lc_file.getvalue())
+            rip = riepilogo(sezioni)
+            st.info(
+                f"Rilevati: **{rip['n_movimenti']}** movimenti "
+                f"(anni {rip['anni']}), **{rip['n_progetti']}** progetti, "
+                f"**{rip['n_spese_periodiche']}** spese periodiche."
+            )
+            clear = st.checkbox(
+                "⚠️ **Cancella i dati contabili esistenti** prima di importare "
+                "(movimenti bancari, previsti, spese periodiche, log import)",
+                value=False,
+            )
+            if st.button("Importa Libro Cassa", type="primary"):
+                esiti = finanza_repo.importa_libro_cassa(
+                    sezioni, clear=clear, eseguito_da=UTENTE
+                )
+                if esiti["clear"]:
+                    st.warning(f"Cancellati: {esiti['clear']}")
+                st.success(
+                    f"Importati {esiti['movimenti']} movimenti, "
+                    f"{esiti['progetti']} progetti, {esiti['previsti']} movimenti "
+                    f"previsti, {esiti['spese_periodiche']} spese periodiche."
+                )
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"File non riconosciuto come Libro Cassa: {exc}")
+
+    st.divider()
+    st.subheader("Import generico (CSV/XLSX con mappatura colonne)")
     st.markdown(
-        "Importa il CSV/XLSX esportato dal Google Sheet finanziario e mappa "
-        "le colonne sui campi. Le righe senza data o importo vengono scartate."
+        "Importa un CSV/XLSX e mappa le colonne sui campi. Le righe senza data "
+        "o importo vengono scartate."
     )
     destinazione = st.radio(
         "Destinazione", ["Movimenti bancari", "Documenti fiscali"], horizontal=True
@@ -135,7 +176,7 @@ with tab_imp:
 
 def _selettore_iniziativa(chiave: str):
     label = st.selectbox(
-        "Iniziativa (commessa)",
+        "Progetto (commessa)",
         ["(nessuna)"] + list(ini_by_label),
         key=chiave,
     )
@@ -152,9 +193,7 @@ with tab_mov:
     )
     movimenti = finanza_repo.list_movimenti(anno_m)
     if movimenti:
-        titolo_ini = {
-            str(i.id): f"{i.codice or ''} {i.titolo}".strip() for i in iniziative
-        }
+        titolo_ini = {str(i.id): i.etichetta for i in iniziative}
         st.dataframe(
             pd.DataFrame(
                 [
@@ -205,9 +244,7 @@ with tab_doc:
     )
     documenti = finanza_repo.list_documenti(anno_d)
     if documenti:
-        titolo_ini = {
-            str(i.id): f"{i.codice or ''} {i.titolo}".strip() for i in iniziative
-        }
+        titolo_ini = {str(i.id): i.etichetta for i in iniziative}
         st.dataframe(
             pd.DataFrame(
                 [
@@ -258,7 +295,7 @@ with tab_spese:
         quando = f3.date_input("Data", value=date.today())
         f4, f5 = st.columns(2)
         label = f4.selectbox(
-            "Iniziativa (commessa)",
+            "Progetto (commessa)",
             ["(nessuna)"] + list(ini_by_label),
             key="spesa_ini",
         )
@@ -279,9 +316,7 @@ with tab_spese:
             st.rerun()
     spese = finanza_repo.list_spese()
     if spese:
-        titolo_ini = {
-            str(i.id): f"{i.codice or ''} {i.titolo}".strip() for i in iniziative
-        }
+        titolo_ini = {str(i.id): i.etichetta for i in iniziative}
         st.dataframe(
             pd.DataFrame(
                 [
@@ -364,14 +399,17 @@ with tab_dash:
     )
     n_mesi = st.slider("Orizzonte (mesi)", 3, 18, 6)
     mesi_avanti = prossimi_mesi(date.today(), n_mesi)
-    entrate_prog = {
-        (r["anno"], r["mese"]): Decimal(r["tot"])
-        for r in finanza_repo.entrate_programmate_mensili()
-    }
-    uscite_prog = {
-        (r["anno"], r["mese"]): Decimal(r["tot"])
-        for r in finanza_repo.uscite_programmate_mensili()
-    }
+    entrate_prog: dict = {}
+    uscite_prog: dict = {}
+    for r in finanza_repo.entrate_programmate_mensili():
+        entrate_prog[(r["anno"], r["mese"])] = Decimal(r["tot"])
+    for r in finanza_repo.uscite_programmate_mensili():
+        uscite_prog[(r["anno"], r["mese"])] = Decimal(r["tot"])
+    # + movimenti previsti dai calendari progetto (non completati)
+    for r in finanza_repo.previsti_programmati_mensili():
+        chiave = (r["anno"], r["mese"])
+        target = entrate_prog if r["segno"] == "entrata" else uscite_prog
+        target[chiave] = target.get(chiave, Decimal("0")) + Decimal(r["tot"])
     proiezione = proiezione_cassa(
         Decimal(str(saldo)),
         mesi_avanti,
@@ -444,14 +482,54 @@ with tab_dash:
 
 # --- Export rendicontazione --------------------------------------------------
 with tab_exp:
+    st.subheader("📚 Esporta Libro Cassa (.xlsx)")
+    st.caption(
+        "Ricostruisce il file nel formato del Google Sheet (fogli «Libro Cassa "
+        "<anno>» + un foglio per progetto): puoi ricaricarlo o incollarlo nel "
+        "foglio Google."
+    )
+    if st.button("Genera Libro Cassa XLSX"):
+        from src.lib.export_contabile import build_libro_cassa_xlsx
+
+        per_anno = finanza_repo.movimenti_per_anno()
+        acr_map = finanza_repo.acronimi_by_iniziativa()
+        progetti_x = [
+            i.model_dump()
+            for i in iniziativa_repo.list_iniziative(tipo="progetto")
+            if i.acronimo
+        ]
+        calendari = {
+            str(p["id"]): finanza_repo.list_movimenti_previsti(p["id"])
+            for p in progetti_x
+        }
+        xlsx = build_libro_cassa_xlsx(per_anno, acr_map, progetti_x, calendari)
+        st.download_button(
+            "⬇️ Scarica Libro Cassa.xlsx",
+            xlsx,
+            "ANTECNICA_Libro_Cassa.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+    with st.expander("↗️ Esportare direttamente nel Google Sheet?"):
+        st.markdown(
+            "È possibile, ma serve un accesso programmatico a Google Sheets:\n\n"
+            "1. crea un **service account** su Google Cloud e abilita l'API "
+            "Google Sheets;\n"
+            "2. condividi il foglio con l'email del service account (in "
+            "*Modifica*);\n"
+            "3. incolla il JSON del service account nei **Secrets** "
+            "(`[gcp_service_account]`).\n\n"
+            "Con questi in mano attivo la scrittura diretta sul foglio "
+            "(via `gspread`). Per ora l'export XLSX qui sopra è pronto all'uso."
+        )
+    st.divider()
+    st.subheader("Export rendicontazione ore")
     st.markdown(
-        "Tabella **ore × tariffa vigente** per iniziativa/persona/periodo, "
+        "Tabella **ore × tariffa vigente** per progetto/persona/periodo, "
         "esportabile in CSV/XLSX per i rendiconti dei finanziatori."
     )
     e1, e2 = st.columns(2)
-    label_i = e1.selectbox(
-        "Iniziativa", ["(tutte)"] + list(ini_by_label), key="exp_ini"
-    )
+    label_i = e1.selectbox("Progetto", ["(tutte)"] + list(ini_by_label), key="exp_ini")
     persone = persona_repo.list_persone()
     sel_p = e2.selectbox(
         "Persona",

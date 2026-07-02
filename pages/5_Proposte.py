@@ -35,9 +35,10 @@ if proposte:
     pipe = pd.DataFrame(
         [
             {
-                "Codice": p.codice or "",
+                "Acronimo": p.acronimo or "",
+                "Identificativo": p.codice or "",
                 "Titolo": p.titolo,
-                "Controparte": p.controparte or "",
+                "Ente finanziatore": p.controparte or "",
                 "Stato": p.stato,
                 "Budget €": float(p.budget_totale or 0),
                 "P(successo)": float(p.probabilita_successo or 0),
@@ -64,11 +65,14 @@ else:
 if is_admin:
     with st.expander("➕ Nuova proposta"):
         with st.form("nuova_proposta", clear_on_submit=True):
-            c1, c2 = st.columns(2)
+            c1, c2, c2b = st.columns([2, 1, 1])
             titolo = c1.text_input("Titolo *")
-            codice = c2.text_input("Codice (opzionale)")
+            acronimo = c2.text_input("Acronimo", placeholder="es. SHIFT")
+            codice = c2b.text_input("Identificativo / Codice")
             c3, c4, c5 = st.columns(3)
-            controparte = c3.text_input("Controparte / ente")
+            controparte = c3.text_input(
+                "Ente finanziatore / Cliente", placeholder="es. MIMIT"
+            )
             inizio = c4.date_input("Inizio previsto", value=date.today())
             fine = c5.date_input("Fine prevista", value=date.today())
             c6, c7 = st.columns(2)
@@ -88,6 +92,7 @@ if is_admin:
                         tipo="proposta",
                         stato="bozza",
                         titolo=titolo,
+                        acronimo=acronimo or None,
                         codice=codice or None,
                         controparte=controparte or None,
                         data_inizio=inizio,
@@ -105,7 +110,7 @@ if proposte:
     sel = st.selectbox(
         "Dettaglio proposta",
         options=proposte,
-        format_func=lambda p: f"[{p.stato}] {p.codice or ''} {p.titolo}",
+        format_func=lambda p: f"[{p.stato}] {p.etichetta}",
     )
     alla_data = sel.data_inizio or date.today()
 

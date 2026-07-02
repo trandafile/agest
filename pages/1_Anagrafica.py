@@ -8,10 +8,17 @@ import streamlit as st
 
 from src.auth.session import require_role
 from src.data import persona_repo, tariffa_repo
-from src.domain.models import RuoloSistema
+from src.domain.models import TIPO_CONTRATTO_LABEL, RuoloSistema, TipoContratto
 from src.ui.tables import persone_dataframe, tariffe_dataframe
 
 persona = require_role(RuoloSistema.admin)
+
+_CONTRATTI = [None] + list(TipoContratto)
+
+
+def _fmt_contratto(t) -> str:
+    return "—" if t is None else TIPO_CONTRATTO_LABEL[t.value]
+
 
 st.title("Anagrafica personale")
 st.caption("Gestione persone e tariffe orarie versionate — riservata all'admin.")
@@ -36,17 +43,30 @@ with st.expander("➕ Nuova persona"):
         ruolo = st.selectbox(
             "Ruolo", options=list(RuoloSistema), format_func=lambda r: r.value
         )
+        st.markdown("**Contratto**")
+        k1, k2, k3 = st.columns(3)
+        n_tipo = k1.selectbox("Tipologia", _CONTRATTI, format_func=_fmt_contratto)
+        n_inizio = k2.date_input("Data inizio", value=None)
+        n_fine = k3.date_input("Data fine (solo tempo determinato)", value=None)
         if st.form_submit_button("Crea persona", type="primary"):
             if not (nome and cognome and email):
                 st.error("Nome, cognome ed email sono obbligatori.")
+            elif n_tipo == TipoContratto.tempo_determinato and not (
+                n_inizio and n_fine
+            ):
+                st.error("Tempo determinato: servono data inizio e data fine.")
             else:
                 try:
+                    fine = n_fine if n_tipo == TipoContratto.tempo_determinato else None
                     persona_repo.create_persona(
                         nome=nome,
                         cognome=cognome,
                         email=email,
                         ruolo_sistema=ruolo,
                         matricola=matricola or None,
+                        tipo_contratto=n_tipo,
+                        contratto_data_inizio=n_inizio,
+                        contratto_data_fine=fine,
                     )
                     st.success(f"Persona {nome} {cognome} creata.")
                     st.rerun()
@@ -88,31 +108,89 @@ if persone:
                 index=list(RuoloSistema).index(sel.ruolo_sistema),
                 format_func=lambda r: r.value,
             )
-            col_a, col_b = st.columns([1, 1])
-            if col_a.form_submit_button("Salva modifiche", type="primary"):
-                try:
-                    persona_repo.update_persona(
-                        sel.id,
-                        nome=m_nome,
-                        cognome=m_cognome,
-                        matricola=m_matricola or None,
-                        attivo=m_attivo,
-                        ruolo_sistema=m_ruolo,
-                        codice_fiscale=m_cf or None,
-                        monte_ore_annuo=m_monte or None,
+            st.markdown("**Contratto**")
+            k1, k2, k3 = st.columns(3)
+            idx_c = _CONTRATTI.index(sel.tipo_contratto) if sel.tipo_contratto else 0
+            m_tipo = k1.selectbox(
+                "Tipologia", _CONTRATTI, index=idx_c, format_func=_fmt_contratto
+            )
+            m_inizio = k2.date_input("Data inizio", value=sel.contratto_data_inizio)
+            m_fine = k3.date_input(
+                "Data fine (solo tempo determinato)",
+                value=sel.contratto_data_fine,
+            )
+            if st.form_submit_button("Salva modifiche", type="primary"):
+                if m_tipo == TipoContratto.tempo_determinato and not (
+                    m_inizio and m_fine
+                ):
+                    st.error("Tempo determinato: servono data inizio e data fine.")
+                else:
+                    fine = m_fine if m_tipo == TipoContratto.tempo_determinato else None
+                    try:
+                        persona_repo.update_persona(
+                            sel.id,
+                            nome=m_nome,
+                            cognome=m_cognome,
+                            matricola=m_matricola or None,
+                            attivo=m_attivo,
+                            ruolo_sistema=m_ruolo,
+                            codice_fiscale=m_cf or None,
+                            monte_ore_annuo=m_monte or None,
+                            tipo_contratto=m_tipo,
+                            contratto_data_inizio=m_inizio,
+                            contratto_data_fine=fine,
+                        )
+                        st.success("Modifiche salvate.")
+                        st.session_state.pop("_persona", None)
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Errore: {exc}")
+
+        # --- Zona pericolosa: eliminazione persona --------------------------
+        st.divider()
+        with st.expander("🗑️ Elimina persona (definitivo)"):
+            if sel.id == persona.id:
+                st.warning("Non puoi eliminare il tuo account.")
+            else:
+                dip = persona_repo.riepilogo_dipendenze(sel.id)
+                st.markdown(
+                    f"Eliminando **{sel.nome_completo}** verranno rimossi anche i "
+                    "suoi dati collegati:"
+                )
+                st.markdown(
+                    f"- {dip['tariffe']} tariffe · {dip['assegnazioni']} assegnazioni\n"
+                    f"- {dip['ore_timesheet']} righe timesheet "
+                    f"({dip['mesi_confermati']} mesi **confermati**)\n"
+                    f"- {dip['presenze']} presenze · {dip['assenze']} assenze"
+                )
+                if dip["progetti_responsabile"] or dip["task"]:
+                    st.info(
+                        f"Su {dip['progetti_responsabile']} progetti (come "
+                        f"responsabile) e {dip['task']} task il riferimento verrà "
+                        "azzerato, non cancellato."
                     )
-                    st.success("Modifiche salvate.")
-                    st.session_state.pop("_persona", None)
-                    st.rerun()
-                except Exception as exc:  # noqa: BLE001
-                    st.error(f"Errore: {exc}")
-            if col_b.form_submit_button("Elimina persona"):
-                try:
-                    persona_repo.delete_persona(sel.id)
-                    st.success("Persona eliminata.")
-                    st.rerun()
-                except Exception as exc:  # noqa: BLE001
-                    st.error(f"Errore: {exc}")
+                if dip["mesi_confermati"]:
+                    st.warning(
+                        "⚠️ Ci sono mesi di timesheet CONFERMATI (dati di "
+                        "rendicontazione). Valuta invece di **disattivare** la "
+                        "persona (togli la spunta «Attivo» e salva)."
+                    )
+                conferma = st.checkbox(
+                    f"Confermo l'eliminazione definitiva di {sel.nome_completo}"
+                )
+                if st.button(
+                    "Elimina definitivamente",
+                    type="primary",
+                    disabled=not conferma,
+                ):
+                    try:
+                        persona_repo.elimina_persona(
+                            sel.id, eseguito_da=st.session_state.get("user_email")
+                        )
+                        st.success("Persona eliminata.")
+                        st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Errore: {exc}")
 
     with tab_tariffe:
         tariffe = tariffa_repo.list_tariffe(sel.id)

@@ -20,26 +20,33 @@ def list_movimenti(anno: int | None = None) -> list[dict]:
     return db.query("select * from movimento_bancario order by data desc")
 
 
-def import_movimenti(righe: list[dict], eseguito_da: str | None = None) -> int:
-    """Import movimenti; se `progetto_label` combacia con codice/titolo di una
-    iniziativa, riconcilia automaticamente."""
-    iniziative = db.query("select id, codice, titolo from iniziativa")
+def import_movimenti(
+    righe: list[dict],
+    eseguito_da: str | None = None,
+    anno_riferimento: int | None = None,
+) -> int:
+    """Import movimenti; se `progetto_label` combacia con acronimo/codice/titolo
+    di un'iniziativa, riconcilia automaticamente. `anno_riferimento` (l'anno del
+    foglio Libro Cassa d'origine) è usato per l'aggregazione dell'export."""
+    iniziative = db.query("select id, codice, acronimo, titolo from iniziativa")
     per_label: dict[str, str] = {}
     for i in iniziative:
-        if i["codice"]:
-            per_label[i["codice"].strip().lower()] = str(i["id"])
-        per_label[i["titolo"].strip().lower()] = str(i["id"])
+        for campo in ("acronimo", "codice", "titolo"):
+            if i[campo]:
+                per_label[i[campo].strip().lower()] = str(i["id"])
 
     n = 0
     for r in righe:
         label = (r.get("progetto_label") or "").strip()
         ini_id = per_label.get(label.lower()) if label else None
+        anno = anno_riferimento or (r["data"].year if r.get("data") else None)
         db.execute(
             """
             insert into movimento_bancario
                 (data, importo, segno, descrizione, controparte, categoria,
-                 n_fattura, persona_contatto, note, progetto_label, iniziativa_id)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 n_fattura, persona_contatto, note, progetto_label,
+                 iniziativa_id, anno_riferimento)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 r["data"],
@@ -53,6 +60,7 @@ def import_movimenti(righe: list[dict], eseguito_da: str | None = None) -> int:
                 r.get("note"),
                 label or None,
                 ini_id,
+                anno,
             ),
             user_email=eseguito_da,
         )
@@ -351,3 +359,226 @@ def audit_recenti(limite: int = 200) -> list[dict]:
     return db.query(
         "select * from audit_log order by eseguito_il desc limit %s", (limite,)
     )
+
+
+# --- Movimenti previsti (calendario per progetto) --------------------------------
+
+
+def list_movimenti_previsti(iniziativa_id: UUID | str) -> list[dict]:
+    return db.query(
+        "select * from movimento_previsto where iniziativa_id = %s "
+        "order by data_attesa nulls last",
+        (str(iniziativa_id),),
+    )
+
+
+def create_movimento_previsto(
+    iniziativa_id: UUID | str,
+    segno: str,
+    importo: float,
+    descrizione: str | None = None,
+    data_attesa: date | None = None,
+    completata: bool = False,
+) -> None:
+    db.execute(
+        """
+        insert into movimento_previsto
+            (iniziativa_id, segno, importo, descrizione, data_attesa, completata)
+        values (%s, %s, %s, %s, %s, %s)
+        """,
+        (str(iniziativa_id), segno, importo, descrizione, data_attesa, completata),
+    )
+
+
+def toggle_previsto_completato(mov_id: UUID | str, completata: bool) -> None:
+    db.execute(
+        "update movimento_previsto set completata = %s where id = %s",
+        (completata, str(mov_id)),
+    )
+
+
+def delete_movimento_previsto(mov_id: UUID | str) -> None:
+    db.execute("delete from movimento_previsto where id = %s", (str(mov_id),))
+
+
+def previsti_programmati_mensili() -> list[dict]:
+    """Movimenti previsti NON completati, aggregati per mese e segno.
+
+    Alimentano la proiezione di cassa insieme ai documenti fiscali aperti.
+    """
+    return db.query("""
+        select extract(year from data_attesa)::int as anno,
+               extract(month from data_attesa)::int as mese, segno,
+               sum(importo) as tot
+        from movimento_previsto
+        where not completata and data_attesa is not null
+          and data_attesa >= date_trunc('month', now())
+        group by 1, 2, 3 order by 1, 2
+        """)
+
+
+# --- Spese periodiche ----------------------------------------------------------------
+
+
+def list_spese_periodiche() -> list[dict]:
+    return db.query("select * from spesa_periodica order by descrizione")
+
+
+def create_spesa_periodica(
+    descrizione: str,
+    importo: float | None = None,
+    tipologia: str | None = None,
+    periodicita: str | None = None,
+    iniziativa_id: UUID | str | None = None,
+    progetto_label: str | None = None,
+    dal: date | None = None,
+    al: date | None = None,
+) -> None:
+    db.execute(
+        """
+        insert into spesa_periodica
+            (descrizione, importo, tipologia, periodicita, iniziativa_id,
+             progetto_label, dal, al)
+        values (%s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            descrizione,
+            importo,
+            tipologia,
+            periodicita,
+            str(iniziativa_id) if iniziativa_id else None,
+            progetto_label,
+            dal,
+            al,
+        ),
+    )
+
+
+def delete_spesa_periodica(sp_id: UUID | str) -> None:
+    db.execute("delete from spesa_periodica where id = %s", (str(sp_id),))
+
+
+# --- Manutenzione / import una-tantum ------------------------------------------------
+
+
+def importa_libro_cassa(
+    sezioni: dict, clear: bool = False, eseguito_da: str | None = None
+) -> dict:
+    """Importa le sezioni di `import_contabile.leggi_workbook` (progetti,
+    calendari, spese periodiche, libri cassa) nel DB. Ritorna i conteggi.
+
+    Crea/aggiorna i progetti per acronimo, importa i movimenti previsti, le
+    spese periodiche e i movimenti bancari (riconciliati per acronimo).
+    """
+    from src.data import iniziativa_repo  # lazy: evita import circolare
+
+    esiti = {
+        "clear": None,
+        "progetti": 0,
+        "previsti": 0,
+        "spese_periodiche": 0,
+        "movimenti": 0,
+    }
+    if clear:
+        esiti["clear"] = svuota_dati_contabili(eseguito_da=eseguito_da)
+
+    id_by_acr: dict[str, str] = {}
+    for acr, dati in sezioni["progetti"].items():
+        info = dati["info"]
+        campi = dict(
+            acronimo=acr,
+            titolo=info.get("nome_esteso") or acr,
+            codice=acr,
+            controparte=info.get("ente_finanziatore"),
+            costo_complessivo=info.get("costo_complessivo"),
+            finanziamento_complessivo=info.get("finanziamento_complessivo"),
+            data_inizio=info.get("data_inizio"),
+            data_fine=info.get("data_fine"),
+        )
+        esistente = iniziativa_repo.get_by_acronimo(acr)
+        ini = (
+            iniziativa_repo.update_iniziativa(esistente.id, **campi)
+            if esistente
+            else iniziativa_repo.create_iniziativa(
+                tipo="progetto", stato="attivo", **campi
+            )
+        )
+        id_by_acr[acr.lower()] = str(ini.id)
+        esiti["progetti"] += 1
+        for m in dati["calendario"]:
+            create_movimento_previsto(
+                ini.id,
+                segno=m["segno"],
+                importo=float(m["importo"]),
+                descrizione=m["descrizione"],
+                data_attesa=m["data_attesa"],
+                completata=m["completata"],
+            )
+            esiti["previsti"] += 1
+
+    for s in sezioni["spese_periodiche"]:
+        ini_id = id_by_acr.get((s.get("progetto_label") or "").lower())
+        create_spesa_periodica(
+            descrizione=s["descrizione"] or "-",
+            importo=float(s["importo"]) if s["importo"] is not None else None,
+            tipologia=s["tipologia"],
+            periodicita=s["periodicita"],
+            iniziativa_id=ini_id,
+            progetto_label=s["progetto_label"],
+            dal=s["dal"],
+            al=s["al"],
+        )
+        esiti["spese_periodiche"] += 1
+
+    for anno, movs in sezioni["libri"].items():
+        n = import_movimenti(movs, eseguito_da=eseguito_da, anno_riferimento=anno)
+        registra_import(
+            anno or 0,
+            12,
+            f"Libro Cassa {anno}",
+            f"libro-cassa-{anno}",
+            n,
+            eseguito_da,
+        )
+        esiti["movimenti"] += n
+    return esiti
+
+
+def movimenti_per_anno() -> dict:
+    """{anno: [movimento dict]} per l'export Libro Cassa.
+
+    Usa `anno_riferimento` (foglio d'origine) con fallback all'anno della data.
+    """
+    rows = db.query("select * from movimento_bancario order by data")
+    out: dict = {}
+    for r in rows:
+        anno = r.get("anno_riferimento") or r["data"].year
+        out.setdefault(anno, []).append(r)
+    return out
+
+
+def acronimi_by_iniziativa() -> dict:
+    """{iniziativa_id(str): acronimo} per la colonna Progetto dell'export."""
+    rows = db.query(
+        "select id, acronimo, codice from iniziativa where acronimo is not null"
+    )
+    return {str(r["id"]): r["acronimo"] for r in rows}
+
+
+def svuota_dati_contabili(eseguito_da: str | None = None) -> dict:
+    """Cancella movimenti bancari, previsti, spese periodiche e log import.
+
+    Ritorna i conteggi eliminati. Operazione distruttiva: la UI deve chiedere
+    conferma esplicita.
+    """
+    conteggi = {}
+    for tabella in (
+        "movimento_bancario",
+        "movimento_previsto",
+        "spesa_periodica",
+        "import_bancario",
+    ):
+        n = db.query_one(f"select count(*) as n from {tabella}")["n"]
+        conteggi[tabella] = n
+        db.execute(f"delete from {tabella}", user_email=eseguito_da)
+    return conteggi

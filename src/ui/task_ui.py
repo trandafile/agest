@@ -77,7 +77,7 @@ def task_dialog(
     st.caption(
         f"Owner: {nomi.get(task.owner_id, '—')} · "
         f"Supervisor: {nomi.get(task.supervisor_id, '—')} · "
-        f"Iniziativa: {titoli_iniziative.get(task.iniziativa_id, '—')}"
+        f"Progetto: {titoli_iniziative.get(task.iniziativa_id, '—')}"
     )
     if not can_edit:
         st.info(
@@ -148,11 +148,9 @@ def form_nuovo_task(
         f4, f5 = st.columns(2)
         if parent is None:
             ini = f4.selectbox(
-                "Iniziativa (opz.)",
+                "Progetto (opz.)",
                 [None] + iniziative,
-                format_func=lambda i: (
-                    "—" if i is None else f"{i.codice or ''} {i.titolo}".strip()
-                ),
+                format_func=lambda i: ("—" if i is None else i.etichetta),
             )
         else:
             ini = None

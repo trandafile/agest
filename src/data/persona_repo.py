@@ -9,7 +9,8 @@ from src.lib import db
 
 _COLS = (
     "id, nome, cognome, matricola, email, ruolo_sistema, attivo, "
-    "codice_fiscale, monte_ore_annuo, created_at, updated_at"
+    "codice_fiscale, monte_ore_annuo, tipo_contratto, contratto_data_inizio, "
+    "contratto_data_fine, created_at, updated_at"
 )
 # Colonne aggiornabili via update_persona (whitelist: no nomi colonna dall'esterno)
 _UPDATABLE = {
@@ -21,6 +22,9 @@ _UPDATABLE = {
     "attivo",
     "codice_fiscale",
     "monte_ore_annuo",
+    "tipo_contratto",
+    "contratto_data_inizio",
+    "contratto_data_fine",
 }
 
 
@@ -68,6 +72,13 @@ def get_persona_by_email(email: str) -> Persona | None:
     return _to_persona(row) if row else None
 
 
+def _norm_str(v: object) -> object:
+    """Enum StrEnum -> valore stringa; il resto invariato."""
+    from enum import Enum
+
+    return v.value if isinstance(v, Enum) else v
+
+
 def create_persona(
     nome: str,
     cognome: str,
@@ -75,10 +86,15 @@ def create_persona(
     ruolo_sistema: RuoloSistema,
     matricola: str | None = None,
     attivo: bool = True,
+    tipo_contratto=None,
+    contratto_data_inizio=None,
+    contratto_data_fine=None,
 ) -> Persona:
     row = db.execute(
-        f"""insert into persona (nome, cognome, email, ruolo_sistema, matricola, attivo)
-            values (%s, %s, %s, %s, %s, %s)
+        f"""insert into persona
+                (nome, cognome, email, ruolo_sistema, matricola, attivo,
+                 tipo_contratto, contratto_data_inizio, contratto_data_fine)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             returning {_COLS}""",
         (
             nome.strip(),
@@ -87,6 +103,9 @@ def create_persona(
             RuoloSistema(ruolo_sistema).value,
             matricola or None,
             attivo,
+            _norm_str(tipo_contratto),
+            contratto_data_inizio,
+            contratto_data_fine,
         ),
     )[0]
     return _to_persona(row)
@@ -98,6 +117,8 @@ def update_persona(persona_id: UUID | str, **campi) -> Persona:
         raise ValueError("Nessun campo aggiornabile fornito.")
     if "ruolo_sistema" in campi:
         campi["ruolo_sistema"] = RuoloSistema(campi["ruolo_sistema"]).value
+    if "tipo_contratto" in campi:
+        campi["tipo_contratto"] = _norm_str(campi["tipo_contratto"])
     if "email" in campi and isinstance(campi["email"], str):
         campi["email"] = campi["email"].strip().lower()
     set_clause = ", ".join(f"{k} = %s" for k in campi)
@@ -108,5 +129,38 @@ def update_persona(persona_id: UUID | str, **campi) -> Persona:
     return _to_persona(row)
 
 
+def riepilogo_dipendenze(persona_id: UUID | str) -> dict:
+    """Conteggio dei dati collegati alla persona (per l'eliminazione sicura)."""
+    return db.query_one(
+        """
+        select
+          (select count(*) from assegnazione
+             where persona_id = %(id)s) as assegnazioni,
+          (select count(*) from timesheet_ora
+             where persona_id = %(id)s) as ore_timesheet,
+          (select count(*) from timesheet_mese
+             where persona_id = %(id)s and stato = 'confermato') as mesi_confermati,
+          (select count(*) from presenza
+             where persona_id = %(id)s) as presenze,
+          (select count(*) from assenza
+             where persona_id = %(id)s) as assenze,
+          (select count(*) from tariffa_oraria
+             where persona_id = %(id)s) as tariffe,
+          (select count(*) from iniziativa
+             where responsabile_id = %(id)s) as progetti_responsabile,
+          (select count(*) from task
+             where owner_id = %(id)s or supervisor_id = %(id)s) as task
+        """,
+        {"id": str(persona_id)},
+    )
+
+
+def elimina_persona(persona_id: UUID | str, eseguito_da: str | None = None) -> None:
+    """Eliminazione sicura e atomica (funzione DB): azzera i riferimenti
+    RESTRICT, traccia in audit e rimuove la persona (cascade sui dati propri)."""
+    db.execute("select elimina_persona(%s)", (str(persona_id),), user_email=eseguito_da)
+
+
 def delete_persona(persona_id: UUID | str) -> None:
-    db.execute("delete from persona where id = %s", (str(persona_id),))
+    """Alias storico -> eliminazione sicura."""
+    elimina_persona(persona_id)

@@ -20,7 +20,7 @@ st.title("Task")
 persone = persona_repo.list_persone(solo_attivi=True)
 nomi = {p.id: p.nome_completo for p in persona_repo.list_persone()}
 iniziative = iniziativa_repo.list_iniziative()
-titoli_ini = {i.id: f"{i.codice or ''} {i.titolo}".strip() for i in iniziative}
+titoli_ini = {i.id: i.etichetta for i in iniziative}
 
 with st.expander("➕ Nuovo task"):
     form_nuovo_task(persone, iniziative, default_owner=persona)
@@ -34,7 +34,7 @@ filtro_stato = f1.multiselect(
     format_func=lambda s: STATO_TASK_BADGE[s],
 )
 filtro_ini = f2.selectbox(
-    "Iniziativa",
+    "Progetto",
     [None] + iniziative,
     format_func=lambda i: "(tutte)" if i is None else titoli_ini[i.id],
 )
