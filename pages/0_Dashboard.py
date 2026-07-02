@@ -157,3 +157,34 @@ with tab1:
 with tab2:
     st.caption("Task e subtask di cui sei supervisor.")
     _render_scope(supervisionati, "sup")
+
+# --- Analisi carico di lavoro (admin/pm) ------------------------------------
+if persona.ruolo_sistema in (RuoloSistema.admin, RuoloSistema.pm):
+    st.divider()
+    st.subheader("👥 Carico di lavoro per persona")
+    carico = task_repo.carico_per_persona()
+    if carico:
+        import pandas as pd
+
+        df_c = pd.DataFrame(
+            [
+                {
+                    "Persona": r["nome"],
+                    "Task attivi": int(r["attivi"]),
+                    "Ore stimate": float(r["ore_stimate"] or 0),
+                    "In ritardo": int(r["in_ritardo"]),
+                    "Completati (30g)": int(r["completati_30"]),
+                }
+                for r in carico
+            ]
+        )
+        st.dataframe(df_c, hide_index=True, use_container_width=True)
+        st.bar_chart(df_c.set_index("Persona")["Task attivi"])
+        sovraccarichi = [r for r in carico if int(r["in_ritardo"]) > 0]
+        for r in sovraccarichi:
+            st.warning(
+                f"⚠️ {r['nome']}: {int(r['in_ritardo'])} task in ritardo "
+                f"(su {int(r['attivi'])} attivi)."
+            )
+    else:
+        st.info("Nessun task assegnato al momento.")

@@ -110,12 +110,14 @@ def create_milestone(
     data_prevista: date | None = None,
     importo_incasso: float | None = None,
     work_package_id: UUID | str | None = None,
+    genera_pagamento: bool = False,
 ) -> Milestone:
     row = db.execute(
         """
         insert into milestone
-            (iniziativa_id, titolo, data_prevista, importo_incasso, work_package_id)
-        values (%s, %s, %s, %s, %s) returning *
+            (iniziativa_id, titolo, data_prevista, importo_incasso,
+             work_package_id, genera_pagamento)
+        values (%s, %s, %s, %s, %s, %s) returning *
         """,
         (
             str(iniziativa_id),
@@ -123,6 +125,7 @@ def create_milestone(
             data_prevista,
             importo_incasso,
             str(work_package_id) if work_package_id else None,
+            genera_pagamento,
         ),
     )[0]
     return Milestone.model_validate(row)

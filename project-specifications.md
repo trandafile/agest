@@ -213,6 +213,14 @@ Import del Google Sheet → tabelle finanza. Riconciliazione per commessa. Dashb
   stati (da_fare/in_corso/bloccato/completato/annullato), priorità, scadenza,
   subtask (`parent_task_id`), collegati opzionalmente a `iniziativa`.
   Visibilità come MAIC tasks: tutti vedono tutto; modifica owner/supervisor/admin.
+- **Deliverable** (livello MAIC tasks tra progetto e task, migr. 0010): gerarchia
+  **iniziativa → deliverable → task → subtask** con **vista ad albero** nella
+  pagina Task. **Milestone** con flag `genera_pagamento` (milestone che determina
+  un incasso → entra nella proiezione di cassa). **Calendario** (pagina dedicata
+  in Attività): scadenze di task/deliverable/milestone in griglia mensile +
+  agenda + export **.ics**. **Analisi carico di lavoro** per persona in Dashboard
+  (admin/pm: task attivi, ore stimate, in ritardo, completati 30g). **Export
+  report attività** in Markdown e XLSX (albero progetto→deliverable→task).
 - **Menu a blocchi** (`st.navigation`): Dashboard · Personale (Timesheet,
   Presenze, Ferie) · Attività (Task, Proposte) · Gestione (Progetti, Anagrafica)
   · Finanza (Finanza, Import banca — solo admin). Voci filtrate per ruolo.

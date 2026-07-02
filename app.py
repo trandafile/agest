@@ -32,7 +32,10 @@ def main() -> None:
         st.Page("pages/4_Ferie.py", title="Ferie / Permessi", icon="🏖️"),
     ]
 
-    blocco_attivita = [st.Page("pages/8_Task.py", title="Task", icon="✅")]
+    blocco_attivita = [
+        st.Page("pages/8_Task.py", title="Task", icon="✅"),
+        st.Page("pages/A_Calendario.py", title="Calendario", icon="📅"),
+    ]
     if admin_pm:
         blocco_attivita.append(
             st.Page("pages/5_Proposte.py", title="Proposte", icon="📝")

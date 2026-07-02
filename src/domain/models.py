@@ -209,11 +209,32 @@ PRIORITA_BADGE = {
 }
 
 
+class Deliverable(BaseModel):
+    """Livello tra progetto e task (come MAIC tasks)."""
+
+    id: UUID | None = None
+    iniziativa_id: UUID
+    titolo: str
+    tipo: str | None = None
+    stato: str = "da_fare"
+    scadenza: date | None = None
+    owner_id: UUID | None = None
+    supervisor_id: UUID | None = None
+    descrizione: str | None = None
+    archiviato: bool = False
+    created_at: datetime | None = None
+
+    @property
+    def attivo(self) -> bool:
+        return not self.archiviato and self.stato not in ("completato", "annullato")
+
+
 class Task(BaseModel):
     """Task stile MAIC tasks; i subtask hanno `parent_task_id` valorizzato."""
 
     id: UUID | None = None
     iniziativa_id: UUID | None = None
+    deliverable_id: UUID | None = None
     parent_task_id: UUID | None = None
     titolo: str
     descrizione: str | None = None
@@ -268,6 +289,7 @@ class Milestone(BaseModel):
     data_prevista: date | None = None
     stato: str = "prevista"
     importo_incasso: Decimal | None = None
+    genera_pagamento: bool = False
 
 
 class Festivita(BaseModel):

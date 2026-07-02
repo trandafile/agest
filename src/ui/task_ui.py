@@ -17,6 +17,14 @@ from src.domain.models import (
 )
 from src.lib.labels import etichetta_progetto
 
+STATO_BADGE_D = {
+    "da_fare": "⚪ Da fare",
+    "in_corso": "🔵 In corso",
+    "bloccato": "🔴 Bloccato",
+    "completato": "🟢 Completato",
+    "annullato": "⚫ Annullato",
+}
+
 
 def scadenza_chip(scadenza: date | None) -> str:
     """Etichetta scadenza con evidenza ritardo/imminenza (stile MAIC tasks)."""
@@ -100,6 +108,26 @@ def task_dialog(
         format_func=lambda p: PRIORITA_BADGE[p],
     )
     scad = c3.date_input("Scadenza", value=task.scadenza)
+
+    # riassegnazione a un deliverable del progetto del task
+    deliverable_id = task.deliverable_id
+    if task.iniziativa_id:
+        from src.data import deliverable_repo
+
+        delivs = deliverable_repo.list_deliverables(task.iniziativa_id)
+        opzioni = [None] + delivs
+        idx = next(
+            (i for i, d in enumerate(opzioni) if d and d.id == task.deliverable_id),
+            0,
+        )
+        d_sel = st.selectbox(
+            "Deliverable",
+            opzioni,
+            index=idx,
+            format_func=lambda d: "— (nessuno)" if d is None else d.titolo,
+        )
+        deliverable_id = d_sel.id if d_sel else None
+
     note = st.text_area("Descrizione / note", value=task.descrizione or "")
     b1, b2 = st.columns(2)
     if b1.button("💾 Salva", type="primary", use_container_width=True):
@@ -108,6 +136,7 @@ def task_dialog(
             stato=stato,
             priorita=prio,
             scadenza=scad,
+            deliverable_id=deliverable_id,
             descrizione=note or None,
         )
         st.rerun()

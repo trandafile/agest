@@ -14,6 +14,7 @@ from src.lib import db
 
 _UPDATABLE = {
     "iniziativa_id",
+    "deliverable_id",
     "parent_task_id",
     "titolo",
     "descrizione",
@@ -59,6 +60,7 @@ def create_task(
     owner_id: UUID | str | None = None,
     supervisor_id: UUID | str | None = None,
     iniziativa_id: UUID | str | None = None,
+    deliverable_id: UUID | str | None = None,
     parent_task_id: UUID | str | None = None,
     descrizione: str | None = None,
     priorita: str = "nessuna",
@@ -68,9 +70,9 @@ def create_task(
     row = db.execute(
         """
         insert into task (titolo, owner_id, supervisor_id, iniziativa_id,
-                          parent_task_id, descrizione, priorita, scadenza,
-                          ore_stimate)
-        values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                          deliverable_id, parent_task_id, descrizione, priorita,
+                          scadenza, ore_stimate)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         returning *
         """,
         (
@@ -78,6 +80,7 @@ def create_task(
             str(owner_id) if owner_id else None,
             str(supervisor_id) if supervisor_id else None,
             str(iniziativa_id) if iniziativa_id else None,
+            str(deliverable_id) if deliverable_id else None,
             str(parent_task_id) if parent_task_id else None,
             descrizione,
             priorita,
@@ -113,3 +116,49 @@ def delete_task(task_id: UUID | str) -> None:
 def puo_modificare(task: Task, persona_id: UUID, is_admin: bool) -> bool:
     """Regola MAIC tasks: modifica owner/supervisor (o admin)."""
     return is_admin or persona_id in (task.owner_id, task.supervisor_id)
+
+
+def carico_per_persona() -> list[dict]:
+    """Analisi del carico di lavoro per persona (task attivi come owner).
+
+    Ritorna: nome, task attivi, ore stimate totali, task in ritardo,
+    completati negli ultimi 30 giorni.
+    """
+    return db.query("""
+        select p.id as persona_id, p.nome || ' ' || p.cognome as nome,
+               count(*) filter (
+                   where t.stato in ('da_fare','in_corso','bloccato')
+                     and not t.archiviato
+               ) as attivi,
+               coalesce(sum(t.ore_stimate) filter (
+                   where t.stato in ('da_fare','in_corso','bloccato')
+                     and not t.archiviato
+               ), 0) as ore_stimate,
+               count(*) filter (
+                   where t.stato in ('da_fare','in_corso','bloccato')
+                     and not t.archiviato and t.scadenza < current_date
+               ) as in_ritardo,
+               count(*) filter (
+                   where t.stato = 'completato'
+                     and t.completato_il >= current_date - 30
+               ) as completati_30
+        from persona p
+        left join task t on t.owner_id = p.id
+        where p.attivo
+        group by p.id, p.nome, p.cognome
+        having count(t.id) > 0
+        order by attivi desc, ore_stimate desc
+        """)
+
+
+def tasks_per_calendario() -> list[dict]:
+    """Task attivi con scadenza, per il calendario/agenda."""
+    return db.query("""
+        select t.id, t.titolo, t.scadenza, t.stato, t.priorita,
+               t.owner_id, i.acronimo, i.titolo as progetto
+        from task t
+        left join iniziativa i on i.id = t.iniziativa_id
+        where t.scadenza is not null and not t.archiviato
+          and t.stato in ('da_fare','in_corso','bloccato')
+        order by t.scadenza
+        """)

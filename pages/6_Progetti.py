@@ -335,8 +335,19 @@ with tab_ms:
             titolo = f1.text_input("Titolo *")
             quando = f2.date_input("Data prevista", value=date.today())
             incasso = f3.number_input("Incasso previsto €", min_value=0.0, step=500.0)
+            genera_pag = st.checkbox(
+                "💰 Milestone di pagamento (determina un incasso previsto)",
+                value=False,
+                help="Se attiva, l'incasso entra nella proiezione di cassa.",
+            )
             if st.form_submit_button("Aggiungi milestone") and titolo:
-                progetti_repo.create_milestone(sel.id, titolo, quando, incasso or None)
+                progetti_repo.create_milestone(
+                    sel.id,
+                    titolo,
+                    quando,
+                    incasso or None,
+                    genera_pagamento=genera_pag,
+                )
                 st.rerun()
     if ms:
         icone = {"prevista": "⏳", "completata": "✅", "slittata": "🔶"}
@@ -349,6 +360,7 @@ with tab_ms:
                             f"{m.data_prevista:%d/%m/%Y}" if m.data_prevista else ""
                         ),
                         "Incasso €": float(m.importo_incasso or 0) or None,
+                        "Pagamento": "💰" if getf(m, "genera_pagamento") else "",
                         "Stato": f"{icone[m.stato]} {m.stato}",
                     }
                     for m in ms

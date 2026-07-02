@@ -121,8 +121,8 @@ def entrate_programmate_mensili() -> list[dict]:
             union all
             select data_prevista, importo_incasso
             from milestone
-            where stato = 'prevista' and importo_incasso is not null
-              and data_prevista is not null
+            where stato = 'prevista' and genera_pagamento
+              and importo_incasso is not null and data_prevista is not null
         ) x
         where scad >= date_trunc('month', now())
         group by 1, 2 order by 1, 2
