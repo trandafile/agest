@@ -143,8 +143,8 @@ Dashboard:
 - Cash flow, P&L per progetto, scadenzario.
 
 Export rendicontazione:
-- Edge Function che genera, per iniziativa/persona/periodo, la tabella ore × tariffa vigente,
-  esportabile in CSV/XLSX per i rendiconti dei finanziatori.
+- Funzione server-side (Python) che genera, per iniziativa/persona/periodo, la tabella
+  ore × tariffa vigente, esportabile in CSV/XLSX per i rendiconti dei finanziatori.
 
 Test:
 - Unit: parsing/mapping import, coerenza consuntivo dopo riconciliazione, correttezza export rendicontazione.

@@ -6,7 +6,7 @@ Attraversano il confine DB/UI: la validazione vive qui, non nei widget.
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
 
@@ -42,6 +42,145 @@ class Persona(BaseModel):
     @property
     def nome_completo(self) -> str:
         return f"{self.nome} {self.cognome}".strip()
+
+
+class TipoIniziativa(enum.StrEnum):
+    proposta = "proposta"
+    progetto = "progetto"
+
+
+class StatoProposta(enum.StrEnum):
+    bozza = "bozza"
+    inviata = "inviata"
+    approvata = "approvata"
+    rifiutata = "rifiutata"
+
+
+class StatoProgetto(enum.StrEnum):
+    attivo = "attivo"
+    chiuso = "chiuso"
+
+
+class TipoAttivita(enum.StrEnum):
+    RI = "RI"  # Ricerca Industriale
+    SS = "SS"  # Sviluppo Sperimentale
+    altro = "altro"
+
+
+class Iniziativa(BaseModel):
+    id: UUID | None = None
+    tipo: TipoIniziativa
+    stato: str
+    codice: str | None = None
+    titolo: str
+    controparte: str | None = None
+    responsabile_id: UUID | None = None
+    tipo_attivita_default: str | None = None
+    data_inizio: date | None = None
+    data_fine: date | None = None
+    ore_totali: Decimal | None = None
+    budget_totale: Decimal | None = None
+    probabilita_successo: Decimal | None = Field(default=None, ge=0, le=1)
+    note: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class Assegnazione(BaseModel):
+    id: UUID | None = None
+    iniziativa_id: UUID
+    persona_id: UUID
+    work_package_id: UUID | None = None
+    tipo_attivita: TipoAttivita = TipoAttivita.altro
+    ore_pianificate: Decimal | None = Field(default=None, ge=0)
+    tetto_ore_mese: Decimal | None = Field(default=None, ge=0)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class TimesheetMese(BaseModel):
+    id: UUID | None = None
+    persona_id: UUID
+    anno: int
+    mese: int = Field(ge=1, le=12)
+    stato: str = "bozza"
+    confermato_il: datetime | None = None
+
+
+class TimesheetOra(BaseModel):
+    id: UUID | None = None
+    persona_id: UUID
+    assegnazione_id: UUID
+    data: date
+    ore: int = Field(ge=0, le=8)
+    forzato: bool = False
+
+
+class Presenza(BaseModel):
+    id: UUID | None = None
+    persona_id: UUID
+    data: date
+    ora_ingresso: time | None = None
+    ora_uscita: time | None = None
+    ore_totali: Decimal | None = None
+    tipo: str = "ufficio"
+    note: str | None = None
+
+
+class Assenza(BaseModel):
+    id: UUID | None = None
+    persona_id: UUID
+    tipo: str
+    data_inizio: date
+    data_fine: date
+    ore_o_giorni: Decimal | None = None
+    stato: str = "richiesta"
+    approvato_da: UUID | None = None
+    note: str | None = None
+
+
+CATEGORIE_BUDGET = (
+    "personale",
+    "materiali",
+    "missioni",
+    "attrezzature",
+    "subcontratti",
+    "overhead",
+)
+
+
+class WorkPackage(BaseModel):
+    id: UUID | None = None
+    iniziativa_id: UUID
+    codice: str | None = None
+    titolo: str
+    budget_ore: Decimal | None = None
+    budget_costo: Decimal | None = None
+
+
+class VoceBudget(BaseModel):
+    id: UUID | None = None
+    iniziativa_id: UUID
+    work_package_id: UUID | None = None
+    categoria: str
+    descrizione: str | None = None
+    importo: Decimal = Field(ge=0)
+
+
+class Milestone(BaseModel):
+    id: UUID | None = None
+    iniziativa_id: UUID
+    work_package_id: UUID | None = None
+    titolo: str
+    data_prevista: date | None = None
+    stato: str = "prevista"
+    importo_incasso: Decimal | None = None
+
+
+class Festivita(BaseModel):
+    id: UUID | None = None
+    data: date
+    descrizione: str
 
 
 class TariffaOraria(BaseModel):

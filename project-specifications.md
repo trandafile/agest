@@ -23,21 +23,21 @@ Principio architetturale portante: **Proposte e Progetti sono la stessa entità 
 ## 2. Stack tecnico
 
 - **App**: **Streamlit (Python)** — applicazione unica server-side, multipage.
-- **Backend / DB**: Supabase (PostgreSQL, Auth, Row-Level Security, Storage, funzioni SQL/RPC).
-- **Accesso dati**: `supabase-py`. Accesso incapsulato in un layer `src/data/` (niente query sparse nelle pagine).
+- **Backend / DB**: **Neon** (PostgreSQL serverless — Row-Level Security, funzioni SQL/RPC). *(Il progetto era stato impostato su Supabase; migrato a Neon. L'auth è indipendente dal DB.)*
+- **Accesso dati**: `psycopg` (v3) con connection pool, incapsulato in un layer `src/data/` (niente query sparse nelle pagine). Il pool vive in `src/lib/db.py`.
 - **Validazione dominio**: `pydantic` per modelli e regole; regole di dominio in `src/domain/`.
 - **Grafici/tabelle/export**: componenti nativi Streamlit + Plotly/Altair; export CSV/XLSX con `pandas`/`openpyxl`.
 - **Logica sensibile** (validazioni forti timesheet, export rendicontazione, ricalcolo consuntivi): funzioni SQL/RPC lato DB o funzioni Python server-side, mai affidate al solo widget.
-- **Deploy**: Streamlit Community Cloud oppure container Docker su servizio interno; DB su Supabase; migrazioni versionate con Supabase CLI.
+- **Deploy**: Streamlit Community Cloud; DB su Neon (usare l'endpoint **pooled** a runtime). Migrazioni versionate come SQL in `db/migrations/`, applicate con `scripts/apply_schema.py` (endpoint **diretto**) o `psql`.
 
 ### Autenticazione (login con Google aziendale)
 
 Login con **Google account aziendale `@antecnica.it`** via OIDC. Due opzioni:
 
-- **Opzione A (default)** — auth **nativa di Streamlit** (OIDC con Google). Streamlit è il server fidato e usa Supabase con la `service_role` key; l'**autorizzazione per ruolo** è applicata in Python leggendo `persona.ruolo_sistema`. La restrizione al dominio si ottiene con la OAuth consent screen **Internal** + check `email endswith @antecnica.it`.
-- **Opzione B** — **Supabase Auth provider Google**: l'app usa il JWT dell'utente e la **RLS** è imposta dal DB. Consigliata se si vuole difesa in profondità sui dati finanziari.
+- **Opzione A (default)** — **OAuth manuale stile MAIC tasks**: bottone `st.link_button` verso l'URL di autorizzazione Google, callback con `?code=` sull'URL base dell'app, scambio code→token e lettura userinfo via `requests` (niente `st.login`). Streamlit è il server fidato e si connette a Neon con il ruolo owner (DSN); l'**autorizzazione per ruolo** è applicata in Python leggendo `persona.ruolo_sistema`. La restrizione al dominio si ottiene con la OAuth consent screen **Internal** + check `email endswith @antecnica.it`.
+- **Opzione B** (difesa in profondità sui dati finanziari) — l'app si connette con un **ruolo DB ristretto** (non-owner, che *non* bypassa la RLS) e imposta a ogni richiesta la GUC `app.current_email` (`SET app.current_email = ...`); le policy RLS filtrano in base a quella. Non richiede un provider di Auth esterno.
 
-In entrambi i casi la `service_role` key resta **solo lato server** (mai esposta al browser). Con l'Opzione A la RLS può restare attiva ma l'enforcement effettivo è nel layer Python `src/auth/` (guardie per ruolo su ogni pagina/azione); con l'Opzione B l'enforcement è nativo via RLS.
+In entrambi i casi il DSN (con la password del DB) resta **solo lato server** (mai esposto al browser). Con l'Opzione A la RLS è definita ma il ruolo owner la bypassa: l'enforcement effettivo è nel layer Python `src/auth/` (guardie per ruolo su ogni pagina/azione); con l'Opzione B l'enforcement è nativo via RLS + ruolo ristretto.
 
 ---
 
@@ -173,7 +173,7 @@ Il backbone è progettato perché un task del MAIC LAB task manager possa agganc
 Poche fasi, incrementali. Ogni fase è rilasciabile e testabile.
 
 ### Fase 1 — Fondamenta
-Setup Supabase (progetto, CLI, migrazioni). Auth + ruoli + RLS di base. Anagrafica **persona** e **tariffa_oraria** versionata. Scaffold frontend (routing, layout, autenticazione, tema). Seed di dati minimi.
+Setup Neon (progetto, migrazioni SQL applicate via `scripts/apply_schema.py`). Auth + ruoli + RLS di base. Anagrafica **persona** e **tariffa_oraria** versionata. Scaffold frontend (routing, layout, autenticazione, tema). Seed di dati minimi.
 
 ### Fase 2 — Operatività personale
 **Timesheet** (griglia mensile con tutte le regole del §5, CONFERMA e lock), **Presenze**, **Ferie/Permessi** (richiesta + approvazione). Calendario festività.
@@ -190,9 +190,9 @@ Import del Google Sheet → tabelle finanza. Riconciliazione per commessa. Dashb
 
 ## 11. Requisiti non funzionali
 
-- **Sicurezza**: RLS su ogni tabella, default deny; nessuna service key nel client; audit su modifiche a timesheet confermati e a dati finanziari.
-- **Integrità**: vincoli DB (check su ore, foreign key, unique su (persona, anno, mese) per `timesheet_mese`).
+- **Sicurezza**: RLS definita su ogni tabella, default deny; il DSN/password del DB resta solo lato server (mai nel client); audit su modifiche a timesheet confermati e a dati finanziari.
+- **Integrità**: vincoli DB (check su ore, foreign key, unique su (persona, anno, mese) per `timesheet_mese`, esclusione anti-sovrapposizione per le tariffe versionate).
 - **UX**: la griglia timesheet deve funzionare fluida con input rapido da tastiera; salvataggio solo su CONFERMA.
 - **i18n**: interfaccia in italiano.
 - **Testing**: unit test (pytest) sulle regole di dominio (timesheet, capacity, quote rimanenti), test sulle policy/enforcement dei ruoli, test dei flussi principali (es. `streamlit.testing` / AppTest).
-- **Manutenibilità**: migrazioni Supabase versionate; modelli `pydantic` allineati allo schema; dipendenze bloccate (`requirements.txt`/`pyproject.toml`).
+- **Manutenibilità**: migrazioni SQL versionate in `db/migrations/`; modelli `pydantic` allineati allo schema; dipendenze bloccate (`requirements.txt`/`pyproject.toml`).

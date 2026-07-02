@@ -16,24 +16,27 @@ Regola aurea: **Proposte e Progetti sono la stessa entità `iniziativa` in stati
 ## Stack e vincoli tecnici
 
 - **App**: **Streamlit (Python 3.11+)**, multipage. Codice tipizzato (type hints) e `ruff`/`black` per lint/format.
-- **DB/Backend**: Supabase (PostgreSQL, Auth, RLS, Storage, funzioni SQL/RPC).
-- **Data**: `supabase-py`. **Niente query sparse nelle pagine**: incapsulare l'accesso dati in un layer `src/data/`.
+- **DB/Backend**: **Neon** (PostgreSQL serverless — RLS, funzioni SQL/RPC). *(Migrato da Supabase; l'auth non dipende dal DB.)*
+- **Data**: `psycopg` (v3) con connection pool in `src/lib/db.py`. **Niente query sparse nelle pagine**: incapsulare l'accesso dati in un layer `src/data/`.
 - **Validazione**: `pydantic`. Le regole di dominio stanno in `src/domain/` (pure Python, testabili) e, dove critiche, sono replicate come constraint/funzioni RPC lato DB.
-- **Auth**: login Google `@antecnica.it` via OIDC. Default **Opzione A** (auth nativa Streamlit + Supabase con `service_role` server-side + guardie di ruolo in `src/auth/`). L'Opzione B (Supabase Auth Google + RLS via JWT) è alternativa per difesa in profondità sui dati finanziari. Vedi `project-specifications.md` §2/§3.
-- **Migrazioni**: solo via Supabase CLI in `supabase/migrations/`. Mai modifiche manuali allo schema fuori dalle migrazioni.
-- **Segreti**: in `.streamlit/secrets.toml` (fuori da git). La `service_role` key sta solo lì, mai stampata in UI né loggata.
+- **Auth**: login Google `@antecnica.it` via **OAuth manuale stile MAIC tasks** (`st.link_button` + callback `?code=` + `requests`; niente `st.login`). Default **Opzione A** (connessione Neon come owner via DSN + guardie di ruolo in `src/auth/`). L'Opzione B (ruolo DB ristretto + GUC `app.current_email` + RLS) è alternativa per difesa in profondità sui dati finanziari. Vedi `project-specifications.md` §2/§3.
+- **Migrazioni**: SQL versionato in `db/migrations/`, applicato con `scripts/apply_schema.py` (endpoint diretto Neon) o `psql`. Mai modifiche manuali allo schema fuori dalle migrazioni.
+- **Segreti**: in `.streamlit/secrets.toml` (locale) o nel pannello Secrets di Streamlit Cloud; in sviluppo anche `.env` (`DATABASE_URL`). Tutti fuori da git. Il DSN (con password DB) sta solo lì, mai stampato in UI né loggato.
 
 ---
 
 ## Struttura repo attesa
 
 ```
-/supabase
-  /migrations        # schema versionato
+/db
+  /migrations        # schema versionato (SQL)
   seed.sql           # dati di seed per sviluppo
+/scripts
+  apply_schema.py    # applica migrazioni/seed a Neon (sostituisce la CLI)
 /.streamlit
   config.toml
-  secrets.toml       # NON in git (auth Google + chiavi Supabase)
+  secrets.toml       # NON in git (auth Google + DSN Neon)
+.env                 # NON in git (DATABASE_URL per sviluppo locale)
 app.py               # entrypoint Streamlit
 /pages               # pagine Streamlit (una per modulo)
   1_Timesheet.py
@@ -44,10 +47,10 @@ app.py               # entrypoint Streamlit
   6_Finanza.py
 /src
   /auth              # login Google, sessione, guardie per ruolo
-  /data              # accesso Supabase (client + repository)
+  /data              # accesso dati (repository su psycopg)
   /domain            # regole di dominio (pydantic, calcoli: costi, quote, capacity)
   /ui                # componenti Streamlit riusabili (es. griglia timesheet)
-  /lib               # utility (date, formattazione, client supabase)
+  /lib               # utility (date, formattazione, client DB = pool psycopg)
 /tests               # pytest (unit) + streamlit AppTest
 requirements.txt     # oppure pyproject.toml
 project-specifications.md
@@ -59,8 +62,8 @@ prompts.md
 
 ## Principi di sicurezza (non negoziabili)
 
-- **RLS su ogni tabella**, default deny. Ogni migrazione che crea una tabella crea anche le sue policy (valide sia per l'Opzione B via JWT, sia come rete di sicurezza in Opzione A).
-- La `service_role` key sta **solo** in `.streamlit/secrets.toml` lato server; mai mostrata in UI, mai committata.
+- **RLS su ogni tabella**, default deny. Ogni migrazione che crea una tabella crea anche le sue policy (valide sia per l'Opzione B via ruolo ristretto + GUC `app.current_email`, sia come rete di sicurezza in Opzione A — dove il ruolo owner la bypassa e l'enforcement è in Python).
+- Il **DSN** (con la password del DB) sta **solo** nei segreti lato server (`.streamlit/secrets.toml` / Secrets di Streamlit Cloud / `.env` locale); mai mostrato in UI, mai committato.
 - **Autorizzazione**: ogni pagina/azione passa da una guardia di ruolo in `src/auth/` (Opzione A) o dalla RLS (Opzione B). Finanza, Proposte e Progetti (vista economica) → solo `admin`.
 - Le validazioni critiche (tetto 8h/giorno, tetto mese, lock del mese confermato, quote rimanenti, import finanza) vanno **replicate lato DB** (constraint/funzioni RPC): la validazione nel widget è solo UX.
 - Audit trail su: modifiche a timesheet confermati, modifiche a dati finanziari.
@@ -73,7 +76,7 @@ prompts.md
 - **DB**: snake_case, chiavi `uuid` con default `gen_random_uuid()`, timestamp `created_at`/`updated_at`. `work_package_id` sempre nullable.
 - **Python**: type hints ovunque, `ruff` + `black`, modelli `pydantic` per i dati che attraversano il confine DB/UI.
 - **Commit**: Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`), una fase = uno o più commit tematici.
-- **Stato**: usare `st.session_state` per la sessione utente/UI; il dato "vero" vive su Supabase, non nello stato della UI.
+- **Stato**: usare `st.session_state` per la sessione utente/UI; il dato "vero" vive sul DB (Neon), non nello stato della UI.
 
 ---
 
@@ -82,7 +85,7 @@ prompts.md
 1. Leggere `project-specifications.md` e la sezione della fase corrente in `prompts.md`.
 2. Se qualcosa è ambiguo o rischioso, **fermarsi e chiedere** invece di indovinare (specialmente su regole timesheet, RLS, calcoli economici).
 3. Lavorare **una fase alla volta**; non anticipare fasi successive.
-4. Per ogni cambiamento di schema: nuova migrazione + policy RLS + rigenerazione tipi.
+4. Per ogni cambiamento di schema: nuova migrazione in `db/migrations/` + policy RLS + allineamento dei modelli `pydantic`.
 5. Scrivere test per le regole di dominio prima di considerare la feature conclusa.
 6. Aggiornare `project-specifications.md` se una decisione implementativa cambia il contratto funzionale.
 
@@ -95,7 +98,7 @@ prompts.md
 - [ ] Regole di dominio coperte da unit test pytest (in particolare: 8h/giorno, tetto mese, lock conferma, quote rimanenti, capacity).
 - [ ] Validazione replicata lato DB dove critica.
 - [ ] UI in italiano; guardia di ruolo attiva sulla pagina; login limitato a `@antecnica.it`.
-- [ ] Nessuna chiave sensibile fuori da `.streamlit/secrets.toml`.
+- [ ] Nessuna chiave/DSN sensibile committata: solo in `.streamlit/secrets.toml`, `.env` (locale) o Secrets di Streamlit Cloud.
 - [ ] Flusso principale coperto da un test (streamlit AppTest).
 
 ---

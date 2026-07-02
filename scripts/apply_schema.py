@@ -1,8 +1,10 @@
 """Applica le migrazioni (e opzionalmente il seed) a un DB PostgreSQL (Neon).
 
-Sostituisce la Supabase CLI. Il DSN si prende, in ordine:
-  1. variabile d'ambiente DATABASE_URL
-  2. `.streamlit/secrets.toml` -> [database].dsn
+Il DDL usa preferibilmente l'endpoint DIRETTO di Neon. DSN, in ordine:
+  1. variabile d'ambiente DATABASE_URL_DIRECT (endpoint diretto)
+  2. variabile d'ambiente DATABASE_URL
+  3. `.streamlit/secrets.toml` -> [database].dsn
+Le variabili si caricano anche da `.env` (python-dotenv), se presente.
 
 Uso:
     python scripts/apply_schema.py            # solo migrazioni
@@ -18,13 +20,20 @@ from pathlib import Path
 
 import psycopg
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ModuleNotFoundError:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent
 MIGRATIONS_DIR = ROOT / "db" / "migrations"
 SEED_FILE = ROOT / "db" / "seed.sql"
 
 
 def get_dsn() -> str:
-    dsn = os.environ.get("DATABASE_URL")
+    dsn = os.environ.get("DATABASE_URL_DIRECT") or os.environ.get("DATABASE_URL")
     if dsn:
         return dsn
     secrets = ROOT / ".streamlit" / "secrets.toml"
@@ -35,8 +44,8 @@ def get_dsn() -> str:
         except KeyError:
             pass
     raise SystemExit(
-        "DSN non trovato. Imposta DATABASE_URL oppure compila "
-        "[database].dsn in .streamlit/secrets.toml"
+        "DSN non trovato. Imposta DATABASE_URL_DIRECT/DATABASE_URL (.env) "
+        "oppure compila [database].dsn in .streamlit/secrets.toml"
     )
 
 

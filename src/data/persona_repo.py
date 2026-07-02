@@ -27,6 +27,26 @@ def list_persone(solo_attivi: bool = False) -> list[Persona]:
     return [_to_persona(r) for r in db.query(sql)]
 
 
+def list_persone_assegnate_a_pm(pm_id: UUID | str) -> list[Persona]:
+    """Persone con assegnazioni su iniziative di cui il pm e' responsabile
+    (spec §3: il pm vede i timesheet delle persone assegnate, sola lettura).
+    """
+    rows = db.query(
+        f"""
+        select {_COLS} from persona
+        where id in (
+            select a.persona_id
+            from assegnazione a
+            join iniziativa i on i.id = a.iniziativa_id
+            where i.responsabile_id = %s
+        )
+        order by cognome, nome
+        """,
+        (str(pm_id),),
+    )
+    return [_to_persona(r) for r in rows]
+
+
 def get_persona(persona_id: UUID | str) -> Persona | None:
     row = db.query_one(f"select {_COLS} from persona where id = %s", (str(persona_id),))
     return _to_persona(row) if row else None

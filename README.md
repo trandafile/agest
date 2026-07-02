@@ -1,149 +1,138 @@
 # ANTECNICA Gestionale
 
-Gestionale interno di ANTECNICA SRLS (timesheet, presenze, ferie, proposte,
-progetti, finanza). Stack **Streamlit + PostgreSQL (Neon)**, login Google
-`@antecnica.it` (**Opzione A**: auth nativa Streamlit; l'autorizzazione per ruolo
-è applicata in Python).
+Gestionale interno di ANTECNICA SRLS: timesheet, presenze, ferie, Proposte
+(pianificazione), Progetti (esecuzione), Finanza (admin). Stack **Streamlit +
+PostgreSQL (Neon)**, login Google `@antecnica.it` (OAuth manuale stile MAIC
+tasks, **Opzione A**: autorizzazione per ruolo in Python).
+
+App pubblica: **https://antgest.streamlit.app/**
 
 Fonte di verità funzionale: [`project-specifications.md`](project-specifications.md).
 Guida per l'agente di coding: [`agents.md`](agents.md). Fasi: [`prompts.md`](prompts.md).
 
-> **Nota sul backend.** Il progetto era stato impostato su Supabase; è stato
-> migrato a **Neon** (PostgreSQL serverless). L'auth non cambia (è OIDC nativo
-> Streamlit, indipendente dal DB). Lo schema è PostgreSQL puro; le policy RLS
-> restano definite come rete di sicurezza (enforcement effettivo nelle guardie
-> Python, come da Opzione A).
+## Stato: TUTTE le fasi implementate ✅
 
-## Stato: Fase 1 — Fondamenta ✅
+| Fase | Contenuto | Stato |
+|---|---|---|
+| 1 — Fondamenta | Auth Google, ruoli, RLS, anagrafica + tariffe versionate | ✅ |
+| 2 — Operatività | Timesheet a griglia con regole §5 + CONFERMA/lock, Presenze, Ferie | ✅ |
+| 3 — Proposte & Progetti | Builder, pipeline pesata, capacity, conversione, baseline vs consuntivo, quote | ✅ |
+| 4 — Finanza | Import CSV/XLSX con mapping, riconciliazione, dashboard, export rendicontazione, audit | ✅ |
 
-- Auth Google (Opzione A) con restrizione dominio `@antecnica.it`.
-- Ruoli di sistema (`admin | pm | dipendente`) + guardie di ruolo in `src/auth/`.
-- Anagrafica **persona** e **tariffa_oraria** versionata (CRUD, solo admin).
-- RLS default-deny definita su ogni tabella (pronta per un ruolo ristretto).
-- Test pytest (regole tariffe, guardie di ruolo) + streamlit AppTest.
+Regole critiche del timesheet replicate **lato DB** (trigger `fn_timesheet_guard`
++ funzione atomica `conferma_timesheet`): tetto 8h/giorno, Max mese per
+assegnazione, weekend/festivi con flag, lock del mese confermato, date entro
+l'iniziativa. Verificate end-to-end su Neon (14/14 check).
 
 ---
 
 ## 1. Prerequisiti
 
 - Python 3.11+ (testato su 3.13).
-- Un account [Neon](https://neon.tech) (free tier sufficiente).
-- Un account Google Workspace con dominio `antecnica.it` (admin per l'OAuth).
+- Un database [Neon](https://neon.tech) (free tier sufficiente).
+- Credenziali Google OAuth (client "Applicazione web").
 
-## 2. Setup dipendenze Python
+## 2. Setup dipendenze
 
-Niente virtualenv: le dipendenze si installano direttamente e, in produzione,
-Streamlit Community Cloud le legge in automatico da `requirements.txt`.
+Niente virtualenv: in produzione Streamlit Community Cloud legge
+`requirements.txt` in automatico.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 3. Creare il database Neon (passo-passo)
+## 3. Database Neon
 
-1. https://neon.tech → **New Project**. Scegli nome (es. `agest`) e region EU
-   (es. Frankfurt). Neon crea un database e un ruolo owner.
-2. **Dashboard → Connect**: copia la **connection string**. Usa quella
-   **Pooled** (host con `-pooler`) per il serverless. Formato:
-   `postgresql://<user>:<password>@<host>-pooler.<region>.aws.neon.tech/<db>?sslmode=require`
-3. Applica schema + seed (vedi §5 per il DSN nei secrets, oppure via env):
+1. https://neon.tech → **New Project** (region EU). Copia la connection string
+   **Pooled** (host con `-pooler`) e quella diretta.
+2. Metti i DSN in `.env` (vedi `.env.example`) e/o in
+   `.streamlit/secrets.toml` (vedi §5).
+3. Applica schema + seed:
    ```bash
-   # opzione A: usa il DSN da .streamlit/secrets.toml
-   python scripts/apply_schema.py --seed
-
-   # opzione B: passa il DSN via variabile d'ambiente
-   #   PowerShell:  $env:DATABASE_URL="postgresql://...sslmode=require"
-   #   bash:        export DATABASE_URL="postgresql://...sslmode=require"
    python scripts/apply_schema.py --seed
    ```
-   In alternativa con `psql`:
-   ```bash
-   psql "$DATABASE_URL" -f db/migrations/0001_fase1_fondamenta.sql
-   psql "$DATABASE_URL" -f db/seed.sql
-   ```
+   Il seed carica: admin `luigi.boccia@antecnica.it`, 2 dipendenti con tariffe
+   versionate, festività italiane 2026, un progetto demo con assegnazioni.
 
-## 4. Credenziali Google OAuth (passo-passo)
+## 4. Credenziali Google OAuth
 
-1. [Google Cloud Console](https://console.cloud.google.com) → seleziona/crea il
-   progetto dell'organizzazione ANTECNICA.
-2. **API e servizi → Schermata consenso OAuth**: tipo utente **Internal**
-   (limita l'accesso al dominio `antecnica.it`). Compila i campi richiesti.
-3. **API e servizi → Credenziali → Crea credenziali → ID client OAuth**:
-   - Tipo applicazione: **Applicazione web**.
-   - **URI di reindirizzamento autorizzati**:
-     - `http://localhost:8501/oauth2callback` (sviluppo locale)
-     - l'equivalente in produzione (es. `https://<app>.streamlit.app/oauth2callback`).
-   - Salva e copia **Client ID** e **Client secret**.
+Il login usa il flusso OAuth manuale (bottone → Google → ritorno con `?code=`).
 
-## 5. Configurare i segreti
+1. [Google Cloud Console](https://console.cloud.google.com) → progetto → **API
+   e servizi → Credenziali → ID client OAuth** (Applicazione web).
+2. **URI di reindirizzamento autorizzati** — è l'**URL base dell'app** (NON
+   `/oauth2callback`):
+   - `http://localhost:8501` (sviluppo)
+   - `https://antgest.streamlit.app` (produzione)
+3. Consent screen **Internal** se il progetto è nel Workspace ANTECNICA
+   (il dominio è comunque verificato dall'app: solo `@antecnica.it`).
 
-Copia il template e inserisci i valori reali (il file è in `.gitignore`):
+> In locale sono riusate le credenziali del client OAuth di MAIC tasks
+> (già in `.streamlit/secrets.toml`, non committato). Per la produzione
+> aggiungi `https://antgest.streamlit.app` ai redirect di quel client
+> oppure crea un client dedicato.
 
-```bash
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-```
+## 5. Segreti — template TOML
 
-Contenuto di `.streamlit/secrets.toml` (senza valori reali):
+Locale: copia in `.streamlit/secrets.toml`. Produzione: incolla nel pannello
+**Secrets** di Streamlit Cloud (Manage app → Settings → Secrets).
 
 ```toml
-[auth]
-redirect_uri = "http://localhost:8501/oauth2callback"
-cookie_secret = "<stringa-random-lunga>"          # python -c "import secrets;print(secrets.token_hex(32))"
-client_id = "<google-oauth-client-id>"
-client_secret = "<google-oauth-client-secret>"
-server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+# --- Google OAuth (login stile MAIC tasks) ---
+GOOGLE_CLIENT_ID = "<client-id>.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET = "<client-secret>"
+GOOGLE_REDIRECT_URI = "https://antgest.streamlit.app"   # in locale: http://localhost:8501
 
+# --- Database PostgreSQL (Neon) — endpoint POOLED ---
 [database]
 dsn = "postgresql://<user>:<password>@<host>-pooler.<region>.aws.neon.tech/<db>?sslmode=require"
 
+# --- Parametri applicativi ---
 [app]
 allowed_email_domain = "antecnica.it"
 ```
 
-> ⚠️ Il `dsn` contiene la password del DB: non mostrarlo in UI, non committarlo.
-> Lo script `aggiorna_agest.bat` fa `git add -A`: `secrets.toml` è escluso da `.gitignore`.
+> ⚠️ Il `dsn` contiene la password del DB e il client secret è riservato:
+> mai in git. `aggiorna_agest.bat` fa `git add -A`, ma `secrets.toml` e `.env`
+> sono esclusi da `.gitignore`.
 
-## 6. Avvio in locale
+## 6. Avvio
 
 ```bash
-streamlit run app.py
+streamlit run app.py          # locale, http://localhost:8501
 ```
 
-Apri http://localhost:8501, accedi con un account `@antecnica.it` presente in
-anagrafica (il seed inserisce `luigi.boccia@antecnica.it` come admin).
-
-## 6b. Deploy su Streamlit Community Cloud
-
-1. Push del repo su GitHub (`aggiorna_agest.bat`).
-2. https://share.streamlit.io → **New app** → seleziona repo/branch, main file
-   `app.py`.
-3. **Advanced settings → Secrets**: incolla lo stesso contenuto di
-   `.streamlit/secrets.toml` (Streamlit Cloud non legge il file locale, che è in
-   `.gitignore`). Aggiorna `auth.redirect_uri` con l'URL pubblico
-   (`https://<app>.streamlit.app/oauth2callback`) e aggiungi quello stesso URI tra
-   i redirect autorizzati in Google Cloud Console.
-4. Le dipendenze vengono installate automaticamente da `requirements.txt`.
+Login con un account `@antecnica.it` presente in anagrafica (l'admin del seed
+è `luigi.boccia@antecnica.it`). Senza credenziali Google nei secrets compare
+un **mock login** di sviluppo.
 
 ## 7. Test, lint, format
 
 ```bash
-pytest                # unit + streamlit AppTest
-ruff check .          # lint
-black --check .       # format
+pytest                # 40 test: tariffe, guardie, timesheet, economia, finanza, AppTest
+ruff check .
+black --check .
 ```
 
 ## Struttura
 
 ```
-app.py                     # entrypoint Streamlit (home + login)
-pages/                     # una pagina per modulo (guardia di ruolo per pagina)
-src/auth/                  # login Google, sessione, require_role()
-src/data/                  # repository (psycopg) — niente query nelle pagine
-src/domain/                # modelli pydantic + regole (tariffa vigente, costi)
-src/ui/                    # componenti Streamlit riusabili
-src/lib/                   # client DB (pool psycopg), utility date
-db/migrations/             # schema versionato (SQL)
-db/seed.sql                # dati di sviluppo
+app.py                     # entrypoint (home + login)
+pages/
+  1_Anagrafica.py          # persone + tariffe versionate (admin)
+  2_Timesheet.py           # griglia mensile con CONFERMA e lock
+  3_Presenze.py            # ingresso/uscita, ore giornaliere
+  4_Ferie.py               # richieste + approvazione admin/pm
+  5_Proposte.py            # builder, pipeline pesata, capacity, conversione
+  6_Progetti.py            # baseline vs consuntivo, quote, milestone
+  7_Finanza.py             # import, riconciliazione, dashboard, export, audit
+src/auth/                  # login Google (stile MAIC tasks), require_role()
+src/data/                  # repository psycopg (niente query nelle pagine)
+src/domain/                # regole pure: timesheet, economia, finanza, tariffe
+src/ui/                    # componenti riusabili
+src/lib/                   # pool psycopg (+ GUC audit), utility date
+db/migrations/             # 0001 fondamenta, 0002 timesheet, 0003 proposte, 0004 finanza
+db/seed.sql                # dati di sviluppo (persone, tariffe, festività, demo)
 scripts/apply_schema.py    # applica migrazioni/seed a Neon
-tests/                     # pytest + AppTest
+tests/                     # pytest (40) + streamlit AppTest
 ```

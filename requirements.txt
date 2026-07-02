@@ -1,9 +1,11 @@
 # ANTECNICA Gestionale — dipendenze applicative
 # App
-streamlit[auth]>=1.42,<2.0     # OIDC nativo: st.login / st.user / st.logout (richiede Authlib)
+streamlit>=1.42,<2.0           # multipage; login via OAuth manuale (stile MAIC tasks)
+requests>=2.31                 # scambio code->token e userinfo Google
 psycopg[binary,pool]>=3.2,<4.0 # driver PostgreSQL (Neon) + connection pool
 pydantic>=2.9,<3.0             # modelli e validazione di dominio
 python-dateutil>=2.9           # gestione validita' temporale tariffe
+python-dotenv>=1.0             # carica .env in sviluppo locale (DATABASE_URL)
 
 # Dati / export (usati dalla Fase 2 in poi, gia' vincolati qui)
 pandas>=2.2
