@@ -11,20 +11,20 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from src.auth.session import require_login, sidebar_utente
-from src.data import persona_repo, presenze_repo, timesheet_repo
+from src.auth.session import require_login
+from src.data import iniziativa_repo, persona_repo, presenze_repo, timesheet_repo
 from src.domain.models import RuoloSistema
 from src.domain.timesheet import (
+    autofill_mese,
     etichetta_giorno,
     giorni_del_mese,
     is_lavorativo,
     riga_valida,
     valida_griglia,
 )
+from src.lib.rendiconto_xlsx import build_rendiconto_xlsx, nome_file
 
-st.set_page_config(page_title="Timesheet — ANTECNICA", page_icon="🗓️", layout="wide")
 persona = require_login()
-sidebar_utente(persona)
 
 st.title("Timesheet")
 
@@ -89,8 +89,14 @@ etichette = {a.id: f"{a.titolo} [{a.tipo_attivita}]" for a in assegnazioni}
 col_giorni = [etichetta_giorno(g) for g in giorni]
 giorno_by_col = dict(zip(col_giorni, giorni, strict=True))
 
-# valori esistenti dal DB
+# valori esistenti dal DB, eventualmente sovrascritti dall'autofill
 val0 = {(str(o.assegnazione_id), o.data): o.ore for o in ore_db}
+chiave_af = f"autofill_{sel_persona.id}_{anno}_{mese}"
+if stato != "bozza":
+    st.session_state.pop(chiave_af, None)
+if chiave_af in st.session_state:
+    val0 = st.session_state[chiave_af]
+nonce = st.session_state.get(f"{chiave_af}_nonce", 0)
 df = pd.DataFrame(
     [
         {
@@ -104,11 +110,20 @@ df = pd.DataFrame(
 non_lavorativi = {
     etichetta_giorno(g) for g in giorni if not is_lavorativo(g, festivita)
 }
-forza = st.checkbox(
+caz1, caz2 = st.columns([2, 1])
+forza = caz1.checkbox(
     "Consenti ore su weekend/festività (flag esplicito)",
     value=False,
     disabled=stato == "confermato",
 )
+if caz2.button(
+    "🪄 Autofill mese (8h/giorno sui giorni lavorativi)",
+    disabled=stato == "confermato" or not editabile_da_utente,
+    use_container_width=True,
+):
+    st.session_state[chiave_af] = autofill_mese(anno, mese, info_by_id, festivita)
+    st.session_state[f"{chiave_af}_nonce"] = nonce + 1
+    st.rerun()
 
 colcfg = {
     c: st.column_config.NumberColumn(
@@ -128,7 +143,7 @@ df_edit = st.data_editor(
     column_config=colcfg,
     disabled=not editabile,
     use_container_width=True,
-    key=f"griglia_{sel_persona.id}_{anno}_{mese}",
+    key=f"griglia_{sel_persona.id}_{anno}_{mese}_{nonce}",
 )
 
 # --- Ricostruzione celle e riepiloghi --------------------------------------
@@ -206,6 +221,7 @@ if editabile:
                 righe,
                 eseguito_da=st.session_state.get("user_email"),
             )
+            st.session_state.pop(chiave_af, None)
             st.success(f"Mese {mese:02d}/{anno} confermato e bloccato.")
             st.rerun()
         except Exception as exc:  # noqa: BLE001
@@ -222,3 +238,67 @@ elif stato == "confermato":
             eseguito_da=st.session_state.get("user_email"),
         )
         st.rerun()
+
+# --- Export XLSX per rendicontazione (formato SAL) ---------------------------
+st.divider()
+with st.expander("📤 Export XLSX per rendicontazione (per progetto)"):
+    dettaglio = timesheet_repo.ore_mese_dettaglio(sel_persona.id, anno, mese)
+    if not dettaglio:
+        st.info("Nessuna ora registrata nel mese: conferma prima il timesheet.")
+    else:
+        progetti_mese = {}
+        for r in dettaglio:
+            progetti_mese.setdefault(
+                str(r["iniziativa_id"]),
+                {
+                    "titolo": r["titolo"],
+                    "cup": r["cup"],
+                    "tipo_desc": r["tipo_progetto_desc"],
+                },
+            )
+        scelta = st.selectbox(
+            "Progetto da rendicontare",
+            options=list(progetti_mese),
+            format_func=lambda k: progetti_mese[k]["titolo"],
+        )
+        if stato != "confermato":
+            st.warning("Il mese è ancora in bozza: l'export riflette i dati salvati.")
+        info_p = progetti_mese[scelta]
+        ore_ri: dict[int, int] = {}
+        ore_ss: dict[int, int] = {}
+        ore_altri: dict[int, int] = {}
+        for r in dettaglio:
+            g = r["data"].day
+            if str(r["iniziativa_id"]) == scelta:
+                dest = ore_ri if r["tipo_attivita"] == "RI" else ore_ss
+                dest[g] = dest.get(g, 0) + int(r["ore"])
+            else:
+                ore_altri[g] = ore_altri.get(g, 0) + int(r["ore"])
+        logo_info = iniziativa_repo.get_logo(scelta)
+        contenuto = build_rendiconto_xlsx(
+            anno=anno,
+            mese=mese,
+            cognome=sel_persona.cognome,
+            nome=sel_persona.nome,
+            codice_fiscale=sel_persona.codice_fiscale,
+            cup=info_p["cup"],
+            soggetto_attuatore=st.secrets.get("app", {}).get(
+                "ragione_sociale", "ANTECNICA SRLS"
+            ),
+            titolo_progetto=info_p["titolo"],
+            tipo_progetto=info_p["tipo_desc"],
+            monte_ore_annuo=sel_persona.monte_ore_annuo,
+            ore_ri=ore_ri,
+            ore_ss=ore_ss,
+            ore_altri_progetti=ore_altri,
+            logo=logo_info[0] if logo_info else None,
+        )
+        st.download_button(
+            "⬇️ Scarica XLSX",
+            contenuto,
+            nome_file(sel_persona.cognome, anno, mese),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+        if not info_p["cup"]:
+            st.caption("ℹ️ CUP mancante: impostalo in Progetti → Rendicontazione.")

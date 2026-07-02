@@ -9,10 +9,19 @@ from src.lib import db
 
 _COLS = (
     "id, nome, cognome, matricola, email, ruolo_sistema, attivo, "
-    "created_at, updated_at"
+    "codice_fiscale, monte_ore_annuo, created_at, updated_at"
 )
 # Colonne aggiornabili via update_persona (whitelist: no nomi colonna dall'esterno)
-_UPDATABLE = {"nome", "cognome", "matricola", "email", "ruolo_sistema", "attivo"}
+_UPDATABLE = {
+    "nome",
+    "cognome",
+    "matricola",
+    "email",
+    "ruolo_sistema",
+    "attivo",
+    "codice_fiscale",
+    "monte_ore_annuo",
+}
 
 
 def _to_persona(row: dict) -> Persona:

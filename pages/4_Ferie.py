@@ -7,13 +7,11 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from src.auth.session import require_login, sidebar_utente
+from src.auth.session import require_login
 from src.data import persona_repo, presenze_repo
 from src.domain.models import RuoloSistema
 
-st.set_page_config(page_title="Ferie — ANTECNICA", page_icon="🏖️", layout="wide")
 persona = require_login()
-sidebar_utente(persona)
 
 st.title("Ferie / Permessi")
 

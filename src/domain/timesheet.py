@@ -132,6 +132,58 @@ def valida_griglia(
     return esito
 
 
+def autofill_mese(
+    anno: int,
+    mese: int,
+    assegnazioni: dict[str, AssegnazioneInfo],
+    festivita: set[date],
+) -> dict[tuple[str, date], int]:
+    """Autofill: riempie i giorni LAVORATIVI del mese con 8 ore/giorno
+    distribuite tra le assegnazioni attive (metodo semplice: round-robin a
+    ore intere, rispettando il tetto mensile di ciascuna riga e l'intervallo
+    date dell'iniziativa).
+
+    Ritorna le celle {(assegnazione_id, giorno): ore}. I giorni in cui tutte
+    le righe hanno esaurito il tetto restano (parzialmente) vuoti.
+    """
+    residuo: dict[str, float] = {
+        aid: (a.tetto_ore_mese if a.tetto_ore_mese is not None else float("inf"))
+        for aid, a in assegnazioni.items()
+    }
+    ordine = list(assegnazioni)  # ordine stabile per il round-robin
+    celle: dict[tuple[str, date], int] = {}
+    cursore = 0
+
+    for giorno in giorni_del_mese(anno, mese):
+        if not is_lavorativo(giorno, festivita):
+            continue
+
+        def eligible(aid: str, g: date = giorno) -> bool:
+            a = assegnazioni[aid]
+            if residuo[aid] < 1:
+                return False
+            if a.data_inizio and g < a.data_inizio:
+                return False
+            return not (a.data_fine and g > a.data_fine)
+
+        for _ in range(TETTO_GIORNALIERO):
+            # prossima riga col tetto non esaurito (round-robin)
+            scelto = None
+            for k in range(len(ordine)):
+                aid = ordine[(cursore + k) % len(ordine)]
+                if eligible(aid):
+                    scelto = aid
+                    cursore = (cursore + k + 1) % len(ordine)
+                    break
+            if scelto is None:
+                break
+            chiave = (scelto, giorno)
+            celle[chiave] = celle.get(chiave, 0) + 1
+            residuo[scelto] -= 1
+
+    return celle
+
+
 def totale_riga(ore: dict[tuple[str, date], int], aid: str) -> int:
     return sum(v for (a, _), v in ore.items() if a == aid)
 

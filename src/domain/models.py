@@ -31,6 +31,8 @@ class Persona(BaseModel):
     email: str
     ruolo_sistema: RuoloSistema = RuoloSistema.dipendente
     attivo: bool = True
+    codice_fiscale: str | None = None
+    monte_ore_annuo: int | None = 1720
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -82,6 +84,8 @@ class Iniziativa(BaseModel):
     budget_totale: Decimal | None = None
     probabilita_successo: Decimal | None = Field(default=None, ge=0, le=1)
     note: str | None = None
+    cup: str | None = None
+    tipo_progetto_desc: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -137,6 +141,48 @@ class Assenza(BaseModel):
     stato: str = "richiesta"
     approvato_da: UUID | None = None
     note: str | None = None
+
+
+STATI_TASK = ("da_fare", "in_corso", "bloccato", "completato", "annullato")
+PRIORITA_TASK = ("urgente", "alta", "media", "bassa", "nessuna")
+
+STATO_TASK_BADGE = {
+    "da_fare": "⚪ Da fare",
+    "in_corso": "🔵 In corso",
+    "bloccato": "🔴 Bloccato",
+    "completato": "🟢 Completato",
+    "annullato": "⚫ Annullato",
+}
+PRIORITA_BADGE = {
+    "urgente": "🔴 Urgente",
+    "alta": "🟠 Alta",
+    "media": "🔵 Media",
+    "bassa": "🟢 Bassa",
+    "nessuna": "⚪ —",
+}
+
+
+class Task(BaseModel):
+    """Task stile MAIC tasks; i subtask hanno `parent_task_id` valorizzato."""
+
+    id: UUID | None = None
+    iniziativa_id: UUID | None = None
+    parent_task_id: UUID | None = None
+    titolo: str
+    descrizione: str | None = None
+    owner_id: UUID | None = None
+    supervisor_id: UUID | None = None
+    stato: str = "da_fare"
+    priorita: str = "nessuna"
+    ore_stimate: Decimal | None = None
+    scadenza: date | None = None
+    completato_il: date | None = None
+    archiviato: bool = False
+    created_at: datetime | None = None
+
+    @property
+    def attivo(self) -> bool:
+        return not self.archiviato and self.stato not in ("completato", "annullato")
 
 
 CATEGORIE_BUDGET = (

@@ -1,7 +1,8 @@
-"""ANTECNICA Gestionale — entrypoint Streamlit (Fase 1).
+"""ANTECNICA Gestionale — entrypoint Streamlit.
 
-Home dopo il login. Le singole pagine sono in /pages e ciascuna applica la
-propria guardia di ruolo (src/auth). La sidebar multipage e' nativa Streamlit.
+Login Google (stile MAIC tasks) + navigation a blocchi con visibilita' per
+ruolo (st.navigation). Le pagine mantengono le proprie guardie di ruolo come
+difesa aggiuntiva.
 """
 
 from __future__ import annotations
@@ -16,30 +17,50 @@ st.set_page_config(page_title="ANTECNICA Gestionale", page_icon="🗂️", layou
 
 def main() -> None:
     persona = require_login()
-    sidebar_utente(persona)
 
-    st.title("ANTECNICA Gestionale")
-    st.write(f"Ciao **{persona.nome}**, benvenuto/a.")
+    admin = persona.ruolo_sistema == RuoloSistema.admin
+    admin_pm = persona.ruolo_sistema in (RuoloSistema.admin, RuoloSistema.pm)
 
-    st.subheader("Moduli")
-    if persona.ruolo_sistema == RuoloSistema.admin:
-        st.markdown(
-            "- **Anagrafica personale** — gestione persone e tariffe (admin)\n"
-            "- *Timesheet, Presenze, Ferie* — in arrivo (Fase 2)\n"
-            "- *Proposte, Progetti* — in arrivo (Fase 3)\n"
-            "- *Finanza* — in arrivo (Fase 4)"
-        )
-    else:
-        st.markdown(
-            "- *Timesheet, Presenze, Ferie* — in arrivo (Fase 2)\n\n"
-            "Usa il menu a sinistra per navigare tra le pagine disponibili."
-        )
-
-    st.info(
-        "Fase 1 (Fondamenta) attiva: autenticazione, ruoli, anagrafica personale "
-        "e tariffe versionate.",
-        icon="✅",
+    dashboard = st.Page(
+        "pages/0_Dashboard.py", title="Dashboard", icon="🏠", default=True
     )
+
+    blocco_personale = [
+        st.Page("pages/2_Timesheet.py", title="Timesheet", icon="🗓️"),
+        st.Page("pages/3_Presenze.py", title="Presenze", icon="⏱️"),
+        st.Page("pages/4_Ferie.py", title="Ferie / Permessi", icon="🏖️"),
+    ]
+
+    blocco_attivita = [st.Page("pages/8_Task.py", title="Task", icon="✅")]
+    if admin_pm:
+        blocco_attivita.append(
+            st.Page("pages/5_Proposte.py", title="Proposte", icon="📝")
+        )
+
+    blocco_gestione: list[st.Page] = []
+    if admin_pm:
+        blocco_gestione.append(
+            st.Page("pages/6_Progetti.py", title="Progetti", icon="📊")
+        )
+    if admin:
+        blocco_gestione.append(
+            st.Page("pages/1_Anagrafica.py", title="Anagrafica", icon="👤")
+        )
+
+    nav: dict[str, list[st.Page]] = {"": [dashboard]}
+    nav["Personale"] = blocco_personale
+    nav["Attività"] = blocco_attivita
+    if blocco_gestione:
+        nav["Gestione"] = blocco_gestione
+    if admin:
+        nav["Finanza"] = [
+            st.Page("pages/7_Finanza.py", title="Finanza", icon="💶"),
+            st.Page("pages/9_ImportBanca.py", title="Import banca", icon="🏦"),
+        ]
+
+    pagina = st.navigation(nav, position="sidebar", expanded=True)
+    sidebar_utente(persona)
+    pagina.run()
 
 
 if __name__ == "__main__":

@@ -21,19 +21,149 @@ def list_movimenti(anno: int | None = None) -> list[dict]:
 
 
 def import_movimenti(righe: list[dict], eseguito_da: str | None = None) -> int:
+    """Import movimenti; se `progetto_label` combacia con codice/titolo di una
+    iniziativa, riconcilia automaticamente."""
+    iniziative = db.query("select id, codice, titolo from iniziativa")
+    per_label: dict[str, str] = {}
+    for i in iniziative:
+        if i["codice"]:
+            per_label[i["codice"].strip().lower()] = str(i["id"])
+        per_label[i["titolo"].strip().lower()] = str(i["id"])
+
     n = 0
     for r in righe:
+        label = (r.get("progetto_label") or "").strip()
+        ini_id = per_label.get(label.lower()) if label else None
         db.execute(
             """
             insert into movimento_bancario
-                (data, importo, segno, descrizione, controparte)
-            values (%s, %s, %s, %s, %s)
+                (data, importo, segno, descrizione, controparte, categoria,
+                 n_fattura, persona_contatto, note, progetto_label, iniziativa_id)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (r["data"], r["importo"], r["segno"], r["descrizione"], r["controparte"]),
+            (
+                r["data"],
+                r["importo"],
+                r["segno"],
+                r.get("descrizione"),
+                r.get("controparte"),
+                r.get("categoria"),
+                r.get("n_fattura"),
+                r.get("persona_contatto"),
+                r.get("note"),
+                label or None,
+                ini_id,
+            ),
             user_email=eseguito_da,
         )
         n += 1
     return n
+
+
+def saldo_attuale() -> float:
+    row = db.query_one("""
+        select coalesce(sum(case when segno = 'entrata' then importo
+                                 else -importo end), 0) as saldo
+        from movimento_bancario
+        """)
+    return float(row["saldo"])
+
+
+def uscite_ricorrenti_stima(n_mesi: int = 3) -> float:
+    """Media mensile delle uscite negli ultimi `n_mesi` mesi pieni."""
+    row = db.query_one(
+        """
+        with mesi as (
+            select date_trunc('month', data) as m, sum(importo) as uscite
+            from movimento_bancario
+            where segno = 'uscita'
+              and data >= date_trunc('month', now()) - make_interval(months => %s)
+              and data <  date_trunc('month', now())
+            group by 1
+        )
+        select coalesce(avg(uscite), 0) as media from mesi
+        """,
+        (n_mesi,),
+    )
+    return float(row["media"])
+
+
+def uscite_per_categoria(anno: int) -> list[dict]:
+    return db.query(
+        """
+        select coalesce(categoria, '(senza categoria)') as categoria,
+               sum(importo) as tot
+        from movimento_bancario
+        where segno = 'uscita' and extract(year from data)::int = %s
+        group by 1 order by tot desc
+        """,
+        (anno,),
+    )
+
+
+def entrate_programmate_mensili() -> list[dict]:
+    """Incassi attesi per mese: documenti attivi aperti + milestone previste."""
+    return db.query("""
+        select extract(year from scad)::int as anno,
+               extract(month from scad)::int as mese, sum(importo) as tot
+        from (
+            select coalesce(data_scadenza, data) as scad, importo
+            from documento_fiscale
+            where tipo = 'attiva' and stato_incasso_pagamento <> 'saldato'
+            union all
+            select data_prevista, importo_incasso
+            from milestone
+            where stato = 'prevista' and importo_incasso is not null
+              and data_prevista is not null
+        ) x
+        where scad >= date_trunc('month', now())
+        group by 1, 2 order by 1, 2
+        """)
+
+
+def uscite_programmate_mensili() -> list[dict]:
+    """Pagamenti attesi per mese: documenti passivi aperti."""
+    return db.query("""
+        select extract(year from coalesce(data_scadenza, data))::int as anno,
+               extract(month from coalesce(data_scadenza, data))::int as mese,
+               sum(importo) as tot
+        from documento_fiscale
+        where tipo = 'passiva' and stato_incasso_pagamento <> 'saldato'
+          and coalesce(data_scadenza, data) >= date_trunc('month', now())
+        group by 1, 2 order by 1, 2
+        """)
+
+
+def hash_gia_importato(file_hash: str) -> bool:
+    return (
+        db.query_one(
+            "select 1 as x from import_bancario where file_hash = %s", (file_hash,)
+        )
+        is not None
+    )
+
+
+def registra_import(
+    anno: int,
+    mese: int,
+    file_name: str,
+    file_hash: str,
+    n_movimenti: int,
+    caricato_da: str | None,
+) -> None:
+    db.execute(
+        """
+        insert into import_bancario
+            (anno, mese, file_name, file_hash, n_movimenti, caricato_da)
+        values (%s, %s, %s, %s, %s, %s)
+        """,
+        (anno, mese, file_name, file_hash, n_movimenti, caricato_da),
+        user_email=caricato_da,
+    )
+
+
+def list_import_bancari() -> list[dict]:
+    return db.query("select * from import_bancario order by caricato_il desc limit 50")
 
 
 def riconcilia_movimento(

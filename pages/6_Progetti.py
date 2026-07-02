@@ -11,7 +11,7 @@ from decimal import Decimal
 import pandas as pd
 import streamlit as st
 
-from src.auth.session import require_role, sidebar_utente
+from src.auth.session import require_role
 from src.data import iniziativa_repo, progetti_repo
 from src.domain.economia import (
     PianoPersona,
@@ -21,9 +21,7 @@ from src.domain.economia import (
 )
 from src.domain.models import RuoloSistema
 
-st.set_page_config(page_title="Progetti — ANTECNICA", page_icon="📊", layout="wide")
 persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
-sidebar_utente(persona)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
 
 st.title("Progetti")
@@ -115,9 +113,44 @@ st.caption(
     f"**{costo_cons_personale:,.2f} €** (tariffe vigenti alla data)."
 )
 
-tab_quote, tab_ms, tab_stato = st.tabs(
-    ["💶 Budget vs consuntivo", "🎯 Milestone", "🚦 Stato"]
+tab_quote, tab_ms, tab_rend, tab_stato = st.tabs(
+    ["💶 Budget vs consuntivo", "🎯 Milestone", "📄 Rendicontazione", "🚦 Stato"]
 )
+
+with tab_rend:
+    st.caption("Dati usati dall'export XLSX del timesheet (CUP, tipo progetto, logo).")
+    if is_admin:
+        with st.form("dati_rendicontazione"):
+            r1, r2 = st.columns(2)
+            n_cup = r1.text_input("CUP del progetto", value=sel.cup or "")
+            n_tipo = r2.text_input(
+                "Tipo del progetto",
+                value=sel.tipo_progetto_desc or "",
+                placeholder="es. Ricerca Industriale e Sviluppo Sperimentale",
+            )
+            if st.form_submit_button("Salva dati", type="primary"):
+                iniziativa_repo.update_iniziativa(
+                    sel.id, cup=n_cup or None, tipo_progetto_desc=n_tipo or None
+                )
+                st.rerun()
+        logo_att = iniziativa_repo.get_logo(sel.id)
+        if logo_att:
+            st.image(logo_att[0], caption="Logo attuale", width=180)
+            if st.button("Rimuovi logo"):
+                iniziativa_repo.set_logo(sel.id, None, None)
+                st.rerun()
+        nuovo_logo = st.file_uploader(
+            "Carica logo progetto (PNG/JPG)", type=["png", "jpg", "jpeg"]
+        )
+        if nuovo_logo is not None and st.button("Salva logo", type="primary"):
+            iniziativa_repo.set_logo(sel.id, nuovo_logo.getvalue(), nuovo_logo.type)
+            st.success("Logo salvato.")
+            st.rerun()
+    else:
+        st.markdown(
+            f"**CUP:** {sel.cup or '—'}  \n"
+            f"**Tipo progetto:** {sel.tipo_progetto_desc or '—'}"
+        )
 
 with tab_quote:
     if quote:

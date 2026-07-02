@@ -188,7 +188,37 @@ Import del Google Sheet → tabelle finanza. Riconciliazione per commessa. Dashb
 
 ---
 
-## 11. Requisiti non funzionali
+## 11. Estensioni v2 (07/2026)
+
+- **Dashboard personale** (stile MAIC tasks): metriche personali (task attivi,
+  in ritardo, completati 30g, puntualità, ritardo medio) + tab "I miei task" /
+  "Supervisionati" raggruppati per iniziativa e ordinati per urgenza.
+- **Modulo Task** (struttura copiata da MAIC tasks): task con owner/supervisor,
+  stati (da_fare/in_corso/bloccato/completato/annullato), priorità, scadenza,
+  subtask (`parent_task_id`), collegati opzionalmente a `iniziativa`.
+  Visibilità come MAIC tasks: tutti vedono tutto; modifica owner/supervisor/admin.
+- **Menu a blocchi** (`st.navigation`): Dashboard · Personale (Timesheet,
+  Presenze, Ferie) · Attività (Task, Proposte) · Gestione (Progetti, Anagrafica)
+  · Finanza (Finanza, Import banca — solo admin). Voci filtrate per ruolo.
+- **Timesheet**: bottone **Autofill** (riempie i giorni lavorativi con 8h
+  distribuite in round-robin tra le assegnazioni, rispettando tetti e intervalli);
+  **export XLSX** per progetto nel formato SAL/MIUR (CUP, CF, monte ore annuo,
+  righe RI/SS/Altri progetti/Didattica/Altro, firme, logo progetto).
+- **Progetti**: tab Rendicontazione con CUP, tipo progetto e **logo** (usato
+  nell'export XLSX). Anagrafica estesa con codice fiscale e monte ore annuo.
+- **Presenze v2**: foglio mensile con UNA riga per giorno (ingresso/uscita/
+  ore/tipo/note) + selezione via pop-up dei **task lavorati** (informativo:
+  NON fa fede per i timesheet).
+- **Finanza v2**: import del Google Sheet finanziario con **tracciato preset**
+  (Data/Descrizione/N. Fattura/Tipo/Importo/Categoria/Progetto/Persona/Note,
+  auto-riconciliazione per etichetta progetto); pagina **Import banca**
+  (XML CAMT.053, CSV, PDF best-effort; anteprima editabile; log anti-duplicati
+  per hash; archivio copia nella cartella Drive «Estratti conto bancari pdf -
+  xml» quando montata); dashboard con saldo, uscite per categoria, autonomia
+  stimata e **proiezione del flusso di cassa** (incassi programmati da documenti
+  aperti + milestone, uscite programmate + ricorrenti stimate su media 3 mesi).
+
+## 12. Requisiti non funzionali
 
 - **Sicurezza**: RLS definita su ogni tabella, default deny; il DSN/password del DB resta solo lato server (mai nel client); audit su modifiche a timesheet confermati e a dati finanziari.
 - **Integrità**: vincoli DB (check su ore, foreign key, unique su (persona, anno, mese) per `timesheet_mese`, esclusione anti-sovrapposizione per le tariffe versionate).

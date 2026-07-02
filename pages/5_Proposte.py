@@ -11,7 +11,7 @@ from decimal import Decimal
 import pandas as pd
 import streamlit as st
 
-from src.auth.session import require_role, sidebar_utente
+from src.auth.session import require_role
 from src.data import iniziativa_repo, persona_repo, progetti_repo
 from src.domain.economia import (
     PianoPersona,
@@ -21,9 +21,7 @@ from src.domain.economia import (
 )
 from src.domain.models import CATEGORIE_BUDGET, RuoloSistema
 
-st.set_page_config(page_title="Proposte — ANTECNICA", page_icon="📝", layout="wide")
 persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
-sidebar_utente(persona)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
 
 st.title("Proposte")

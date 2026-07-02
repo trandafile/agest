@@ -10,7 +10,7 @@ App pubblica: **https://antgest.streamlit.app/**
 Fonte di verità funzionale: [`project-specifications.md`](project-specifications.md).
 Guida per l'agente di coding: [`agents.md`](agents.md). Fasi: [`prompts.md`](prompts.md).
 
-## Stato: TUTTE le fasi implementate ✅
+## Stato: TUTTE le fasi implementate ✅ (+ estensioni v2)
 
 | Fase | Contenuto | Stato |
 |---|---|---|
@@ -18,6 +18,9 @@ Guida per l'agente di coding: [`agents.md`](agents.md). Fasi: [`prompts.md`](pro
 | 2 — Operatività | Timesheet a griglia con regole §5 + CONFERMA/lock, Presenze, Ferie | ✅ |
 | 3 — Proposte & Progetti | Builder, pipeline pesata, capacity, conversione, baseline vs consuntivo, quote | ✅ |
 | 4 — Finanza | Import CSV/XLSX con mapping, riconciliazione, dashboard, export rendicontazione, audit | ✅ |
+| v2 | Dashboard personale + Task (stile MAIC tasks), menu a blocchi per ruolo, autofill timesheet, export XLSX SAL (CUP/logo), Presenze a foglio mensile con task, import banca (CAMT/CSV/PDF), proiezione flusso di cassa | ✅ |
+
+Dettagli v2 in `project-specifications.md` §11.
 
 Regole critiche del timesheet replicate **lato DB** (trigger `fn_timesheet_guard`
 + funzione atomica `conferma_timesheet`): tetto 8h/giorno, Max mese per

@@ -52,13 +52,16 @@ def test_normalizza_movimento_con_segno_esplicito():
         "controparte": "Chi",
     }
     out = normalizza_movimento(riga, mappa)
-    assert out == {
+    atteso = {
         "data": date(2026, 3, 5),
         "importo": D("1000.00"),
         "segno": "uscita",
         "descrizione": "Acquisto",
         "controparte": "Fornitore Srl",
     }
+    assert {k: out[k] for k in atteso} == atteso
+    # campi estesi non mappati -> None
+    assert out["categoria"] is None and out["progetto_label"] is None
 
 
 def test_normalizza_movimento_segno_da_importo():

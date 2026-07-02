@@ -21,7 +21,17 @@ _UPD_INIZIATIVA = {
     "budget_totale",
     "probabilita_successo",
     "note",
+    "cup",
+    "tipo_progetto_desc",
 }
+
+# Tutte le colonne TRANNE il logo (bytea pesante: si carica solo on demand)
+_COLS = (
+    "id, tipo, stato, codice, titolo, controparte, responsabile_id, "
+    "tipo_attivita_default, data_inizio, data_fine, ore_totali, "
+    "budget_totale, probabilita_successo, note, cup, tipo_progetto_desc, "
+    "created_at, updated_at"
+)
 _UPD_ASSEGNAZIONE = {
     "work_package_id",
     "tipo_attivita",
@@ -37,7 +47,7 @@ def _to_iniziativa(row: dict) -> Iniziativa:
 def list_iniziative(
     tipo: str | None = None, stati: list[str] | None = None
 ) -> list[Iniziativa]:
-    sql = "select * from iniziativa"
+    sql = f"select {_COLS} from iniziativa"
     cond, params = [], []
     if tipo:
         cond.append("tipo = %s")
@@ -52,8 +62,26 @@ def list_iniziative(
 
 
 def get_iniziativa(iniziativa_id: UUID | str) -> Iniziativa | None:
-    row = db.query_one("select * from iniziativa where id = %s", (str(iniziativa_id),))
+    row = db.query_one(
+        f"select {_COLS} from iniziativa where id = %s", (str(iniziativa_id),)
+    )
     return _to_iniziativa(row) if row else None
+
+
+def get_logo(iniziativa_id: UUID | str) -> tuple[bytes, str] | None:
+    """Logo del progetto (bytes, mime) o None."""
+    row = db.query_one(
+        "select logo, logo_mime from iniziativa where id = %s and logo is not null",
+        (str(iniziativa_id),),
+    )
+    return (bytes(row["logo"]), row["logo_mime"] or "image/png") if row else None
+
+
+def set_logo(iniziativa_id: UUID | str, logo: bytes | None, mime: str | None) -> None:
+    db.execute(
+        "update iniziativa set logo = %s, logo_mime = %s where id = %s",
+        (logo, mime, str(iniziativa_id)),
+    )
 
 
 def create_iniziativa(**campi) -> Iniziativa:
@@ -61,7 +89,7 @@ def create_iniziativa(**campi) -> Iniziativa:
     cols = ", ".join(campi)
     marks = ", ".join(["%s"] * len(campi))
     row = db.execute(
-        f"insert into iniziativa ({cols}) values ({marks}) returning *",
+        f"insert into iniziativa ({cols}) values ({marks}) returning " + _COLS,
         [str(v) if isinstance(v, UUID) else v for v in campi.values()],
     )[0]
     return _to_iniziativa(row)
@@ -76,7 +104,7 @@ def update_iniziativa(iniziativa_id: UUID | str, **campi) -> Iniziativa:
         str(iniziativa_id)
     ]
     row = db.execute(
-        f"update iniziativa set {set_clause} where id = %s returning *", params
+        f"update iniziativa set {set_clause} where id = %s returning " + _COLS, params
     )[0]
     return _to_iniziativa(row)
 
@@ -93,11 +121,11 @@ def approva_proposta(
     WP, assegnazioni e voci di budget restano collegati: diventano la baseline.
     """
     row = db.execute(
-        """
+        f"""
         update iniziativa
            set tipo = 'progetto', stato = 'attivo', probabilita_successo = null
          where id = %s and tipo = 'proposta'
-        returning *
+        returning {_COLS}
         """,
         (str(iniziativa_id),),
         user_email=eseguito_da,

@@ -13,7 +13,31 @@ from decimal import Decimal, InvalidOperation
 from src.domain.models import TariffaOraria
 from src.domain.tariffe import tariffa_vigente
 
-CAMPI_MOVIMENTO = ("data", "importo", "segno", "descrizione", "controparte")
+CAMPI_MOVIMENTO = (
+    "data",
+    "importo",
+    "segno",
+    "descrizione",
+    "controparte",
+    "categoria",
+    "n_fattura",
+    "progetto",
+    "persona_contatto",
+    "note",
+)
+
+# Tracciato del Google Sheet finanziario ANTECNICA (mappatura automatica)
+PRESET_SHEET_ANTECNICA = {
+    "data": "Data",
+    "descrizione": "Descrizione Transazione",
+    "n_fattura": "N. Fattura",
+    "segno": "Tipo Transazione",
+    "importo": "Importo (€)",
+    "categoria": "Categoria",
+    "progetto": "Progetto",
+    "persona_contatto": "Persona/Contatto",
+    "note": "Note",
+}
 CAMPI_DOCUMENTO = (
     "tipo",
     "numero",
@@ -63,9 +87,13 @@ def parse_data(val: object) -> date | None:
     s = str(val).strip()
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y", "%d.%m.%Y"):
         try:
-            return datetime.strptime(s, fmt).date()
+            d = datetime.strptime(s, fmt).date()
         except ValueError:
             continue
+        # anni palesemente errati (es. refuso '0206') -> riga da segnalare
+        if not 1990 <= d.year <= 2100:
+            return None
+        return d
     return None
 
 
@@ -95,6 +123,11 @@ def normalizza_movimento(riga: dict, mappa: dict[str, str]) -> dict | None:
         "segno": segno,
         "descrizione": _txt(riga, mappa, "descrizione"),
         "controparte": _txt(riga, mappa, "controparte"),
+        "categoria": _txt(riga, mappa, "categoria"),
+        "n_fattura": _txt(riga, mappa, "n_fattura"),
+        "persona_contatto": _txt(riga, mappa, "persona_contatto"),
+        "note": _txt(riga, mappa, "note"),
+        "progetto_label": _txt(riga, mappa, "progetto"),
     }
 
 
@@ -140,6 +173,51 @@ def _txt(riga: dict, mappa: dict[str, str], campo: str) -> str | None:
     v = riga.get(col)
     s = str(v).strip() if v is not None else ""
     return s or None
+
+
+def prossimi_mesi(da: date, n: int) -> list[tuple[int, int]]:
+    """I prossimi `n` (anno, mese) a partire dal mese di `da` (incluso)."""
+    out = []
+    a, m = da.year, da.month
+    for _ in range(n):
+        out.append((a, m))
+        m += 1
+        if m > 12:
+            a, m = a + 1, 1
+    return out
+
+
+def proiezione_cassa(
+    saldo_iniziale: Decimal,
+    mesi: list[tuple[int, int]],
+    entrate_programmate: dict[tuple[int, int], Decimal],
+    uscite_programmate: dict[tuple[int, int], Decimal],
+    uscita_ricorrente_stimata: Decimal = Decimal("0"),
+) -> list[dict]:
+    """Proiezione del flusso di cassa mese per mese.
+
+    Per ogni mese: saldo = saldo precedente + entrate programmate (documenti
+    attivi aperti per scadenza, milestone previste) − uscite programmate
+    (documenti passivi aperti) − stima delle uscite ricorrenti (media storica).
+    """
+    out = []
+    saldo = saldo_iniziale
+    for chiave in mesi:
+        entrate = entrate_programmate.get(chiave, Decimal("0"))
+        uscite = (
+            uscite_programmate.get(chiave, Decimal("0")) + uscita_ricorrente_stimata
+        )
+        saldo = saldo + entrate - uscite
+        out.append(
+            {
+                "anno": chiave[0],
+                "mese": chiave[1],
+                "entrate": entrate,
+                "uscite": uscite,
+                "saldo": saldo,
+            }
+        )
+    return out
 
 
 def tabella_rendicontazione(

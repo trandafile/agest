@@ -4,24 +4,26 @@ from __future__ import annotations
 
 import io
 from datetime import date
+from decimal import Decimal
 
 import pandas as pd
 import streamlit as st
 
-from src.auth.session import require_role, sidebar_utente
+from src.auth.session import require_role
 from src.data import finanza_repo, iniziativa_repo, persona_repo, progetti_repo
 from src.domain.finanza import (
     CAMPI_DOCUMENTO,
     CAMPI_MOVIMENTO,
+    PRESET_SHEET_ANTECNICA,
     normalizza_documento,
     normalizza_movimento,
+    proiezione_cassa,
+    prossimi_mesi,
     tabella_rendicontazione,
 )
 from src.domain.models import CATEGORIE_BUDGET, RuoloSistema
 
-st.set_page_config(page_title="Finanza — ANTECNICA", page_icon="💶", layout="wide")
 persona = require_role(RuoloSistema.admin)
-sidebar_utente(persona)
 UTENTE = st.session_state.get("user_email")
 
 st.title("Finanza")
@@ -72,23 +74,43 @@ with tab_imp:
                 if destinazione == "Movimenti bancari"
                 else CAMPI_DOCUMENTO
             )
-            st.markdown("**Mappatura colonne → campi**")
+            colonne_set = {str(c).strip() for c in df.columns}
+            preset_ok = (
+                destinazione == "Movimenti bancari"
+                and {"Data", "Importo (€)", "Tipo Transazione"} <= colonne_set
+            )
+            usa_preset = st.checkbox(
+                "Usa il tracciato del Google Sheet finanziario ANTECNICA "
+                "(Data / Descrizione / N. Fattura / Tipo / Importo / Categoria / "
+                "Progetto / Persona / Note)",
+                value=preset_ok,
+                disabled=not preset_ok,
+            )
             mappa: dict[str, str] = {}
-            cols = st.columns(min(len(campi), 4))
-            for i, campo in enumerate(campi):
-                # pre-seleziona per nome uguale (case-insensitive)
-                idx = next(
-                    (
-                        j + 1
-                        for j, c in enumerate(df.columns)
-                        if str(c).strip().lower() == campo.replace("_", " ")
-                        or str(c).strip().lower() == campo
-                    ),
-                    0,
-                )
-                scelta = cols[i % 4].selectbox(campo, colonne, index=idx)
-                if scelta != "(nessuna)":
-                    mappa[campo] = scelta
+            if usa_preset:
+                mappa = {
+                    campo: col
+                    for campo, col in PRESET_SHEET_ANTECNICA.items()
+                    if col in colonne_set
+                }
+                st.caption("Mappatura automatica applicata. ✔️")
+            else:
+                st.markdown("**Mappatura colonne → campi**")
+                cols = st.columns(min(len(campi), 4))
+                for i, campo in enumerate(campi):
+                    # pre-seleziona per nome uguale (case-insensitive)
+                    idx = next(
+                        (
+                            j + 1
+                            for j, c in enumerate(df.columns)
+                            if str(c).strip().lower() == campo.replace("_", " ")
+                            or str(c).strip().lower() == campo
+                        ),
+                        0,
+                    )
+                    scelta = cols[i % 4].selectbox(campo, colonne, index=idx)
+                    if scelta != "(nessuna)":
+                        mappa[campo] = scelta
 
             if st.button("Importa", type="primary"):
                 grezze = df.to_dict("records")
@@ -143,8 +165,11 @@ with tab_mov:
                             "🟢 entrata" if m["segno"] == "entrata" else "🔴 uscita"
                         ),
                         "Descrizione": m["descrizione"] or "",
-                        "Controparte": m["controparte"] or "",
-                        "Commessa": titolo_ini.get(str(m["iniziativa_id"]), "—"),
+                        "Categoria": m.get("categoria") or "",
+                        "Persona": m.get("persona_contatto") or "",
+                        "Commessa": titolo_ini.get(
+                            str(m["iniziativa_id"]), m.get("progetto_label") or "—"
+                        ),
                     }
                     for m in movimenti
                 ]
@@ -279,6 +304,21 @@ with tab_spese:
 
 # --- Dashboard ---------------------------------------------------------------
 with tab_dash:
+    saldo = finanza_repo.saldo_attuale()
+    ricorrente = finanza_repo.uscite_ricorrenti_stima()
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Saldo (da movimenti importati)", f"{saldo:,.2f} €")
+    k2.metric(
+        "Uscite ricorrenti stimate",
+        f"{ricorrente:,.2f} €/mese",
+        help="Media delle uscite mensili degli ultimi 3 mesi pieni.",
+    )
+    k3.metric(
+        "Autonomia stimata",
+        f"{saldo / ricorrente:.1f} mesi" if ricorrente > 0 else "—",
+        help="Saldo / uscite ricorrenti (senza nuove entrate).",
+    )
+
     anno_dash = st.selectbox(
         "Anno",
         range(date.today().year - 3, date.today().year + 1),
@@ -303,6 +343,62 @@ with tab_dash:
         st.line_chart(df_cf["Saldo"].cumsum().rename("Saldo cumulato"))
     else:
         st.info("Nessun movimento nell'anno.")
+
+    st.subheader("Uscite per categoria")
+    per_cat = finanza_repo.uscite_per_categoria(anno_dash)
+    if per_cat:
+        st.bar_chart(
+            pd.DataFrame(
+                [
+                    {"Categoria": r["categoria"], "Uscite €": float(r["tot"])}
+                    for r in per_cat
+                ]
+            ).set_index("Categoria")
+        )
+
+    st.subheader("Proiezione flusso di cassa")
+    st.caption(
+        "Saldo proiettato = saldo attuale + incassi programmati (documenti "
+        "attivi aperti e milestone previste) − pagamenti programmati "
+        "(documenti passivi aperti) − uscite ricorrenti stimate."
+    )
+    n_mesi = st.slider("Orizzonte (mesi)", 3, 18, 6)
+    mesi_avanti = prossimi_mesi(date.today(), n_mesi)
+    entrate_prog = {
+        (r["anno"], r["mese"]): Decimal(r["tot"])
+        for r in finanza_repo.entrate_programmate_mensili()
+    }
+    uscite_prog = {
+        (r["anno"], r["mese"]): Decimal(r["tot"])
+        for r in finanza_repo.uscite_programmate_mensili()
+    }
+    proiezione = proiezione_cassa(
+        Decimal(str(saldo)),
+        mesi_avanti,
+        entrate_prog,
+        uscite_prog,
+        uscita_ricorrente_stimata=Decimal(str(round(ricorrente, 2))),
+    )
+    df_pro = pd.DataFrame(
+        [
+            {
+                "Mese": f"{r['anno']}-{r['mese']:02d}",
+                "Entrate previste": float(r["entrate"]),
+                "Uscite previste": float(r["uscite"]),
+                "Saldo proiettato": float(r["saldo"]),
+            }
+            for r in proiezione
+        ]
+    ).set_index("Mese")
+    st.line_chart(df_pro["Saldo proiettato"])
+    st.dataframe(df_pro, use_container_width=True)
+    negativi = [r for r in proiezione if r["saldo"] < 0]
+    if negativi:
+        primo = negativi[0]
+        st.error(
+            f"⚠️ Saldo proiettato NEGATIVO da {primo['mese']:02d}/{primo['anno']}: "
+            "valuta di anticipare incassi o rinviare uscite."
+        )
 
     st.subheader("P&L per progetto (movimenti riconciliati)")
     pnl = finanza_repo.pnl_per_progetto()

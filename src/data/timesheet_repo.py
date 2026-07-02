@@ -68,6 +68,24 @@ def ore_mese(persona_id: UUID | str, anno: int, mese: int) -> list[TimesheetOra]
     return [TimesheetOra.model_validate(r) for r in rows]
 
 
+def ore_mese_dettaglio(persona_id: UUID | str, anno: int, mese: int) -> list[dict]:
+    """Ore del mese con iniziativa e tipo attivita' (per l'export XLSX)."""
+    return db.query(
+        """
+        select t.data, t.ore, a.tipo_attivita, a.iniziativa_id,
+               i.titolo, i.cup, i.tipo_progetto_desc
+        from timesheet_ora t
+        join assegnazione a on a.id = t.assegnazione_id
+        join iniziativa i on i.id = a.iniziativa_id
+        where t.persona_id = %s
+          and extract(year from t.data)::int = %s
+          and extract(month from t.data)::int = %s
+        order by t.data
+        """,
+        (str(persona_id), anno, mese),
+    )
+
+
 def stato_mese(persona_id: UUID | str, anno: int, mese: int) -> str:
     row = db.query_one(
         """

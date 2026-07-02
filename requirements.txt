@@ -10,6 +10,7 @@ python-dotenv>=1.0             # carica .env in sviluppo locale (DATABASE_URL)
 # Dati / export (usati dalla Fase 2 in poi, gia' vincolati qui)
 pandas>=2.2
 openpyxl>=3.1
+pypdf>=5.0                     # estrazione testo estratti conto PDF (best-effort)
 
 # Dev / test
 pytest>=8.3

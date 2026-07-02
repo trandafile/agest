@@ -6,15 +6,12 @@ from datetime import date
 
 import streamlit as st
 
-from src.auth.session import require_role, sidebar_utente
+from src.auth.session import require_role
 from src.data import persona_repo, tariffa_repo
 from src.domain.models import RuoloSistema
 from src.ui.tables import persone_dataframe, tariffe_dataframe
 
-st.set_page_config(page_title="Anagrafica — ANTECNICA", page_icon="👤", layout="wide")
-
 persona = require_role(RuoloSistema.admin)
-sidebar_utente(persona)
 
 st.title("Anagrafica personale")
 st.caption("Gestione persone e tariffe orarie versionate — riservata all'admin.")
@@ -77,6 +74,14 @@ if persone:
             c3, c4 = st.columns(2)
             m_matricola = c3.text_input("Matricola", value=sel.matricola or "")
             m_attivo = c4.checkbox("Attivo", value=sel.attivo)
+            c5, c6 = st.columns(2)
+            m_cf = c5.text_input("Codice fiscale", value=sel.codice_fiscale or "")
+            m_monte = c6.number_input(
+                "Monte ore annuo",
+                min_value=0,
+                step=10,
+                value=int(sel.monte_ore_annuo or 1720),
+            )
             m_ruolo = st.selectbox(
                 "Ruolo",
                 options=list(RuoloSistema),
@@ -93,6 +98,8 @@ if persone:
                         matricola=m_matricola or None,
                         attivo=m_attivo,
                         ruolo_sistema=m_ruolo,
+                        codice_fiscale=m_cf or None,
+                        monte_ore_annuo=m_monte or None,
                     )
                     st.success("Modifiche salvate.")
                     st.session_state.pop("_persona", None)
