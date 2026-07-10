@@ -123,6 +123,9 @@ def update_iniziativa(iniziativa_id: UUID | str, **campi) -> Iniziativa:
 
 
 def delete_iniziativa(iniziativa_id: UUID | str) -> None:
+    from src.data import commento_repo
+
+    commento_repo.delete_commenti_di("iniziativa", iniziativa_id)
     db.execute("delete from iniziativa where id = %s", (str(iniziativa_id),))
 
 

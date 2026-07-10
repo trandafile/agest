@@ -17,6 +17,8 @@ from src.data import (
     etichetta_repo,
     finanza_repo,
     iniziativa_repo,
+    missione_repo,
+    persona_repo,
     progetti_repo,
 )
 from src.domain.economia import (
@@ -25,8 +27,13 @@ from src.domain.economia import (
     quote_rimanenti,
     rollup_personale,
 )
-from src.domain.models import RuoloSistema
+from src.domain.models import (
+    STATO_MISSIONE_BADGE,
+    STATO_RIMBORSO_BADGE,
+    RuoloSistema,
+)
 from src.lib.labels import etichetta_progetto, getf
+from src.ui.commenti_ui import blocco_commenti
 
 persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
@@ -121,15 +128,59 @@ st.caption(
     f"**{costo_cons_personale:,.2f} €** (tariffe vigenti alla data)."
 )
 
-tab_quote, tab_fin, tab_ms, tab_rend, tab_stato = st.tabs(
+tab_quote, tab_fin, tab_ms, tab_rend, tab_miss, tab_comm, tab_stato = st.tabs(
     [
         "💶 Budget vs consuntivo",
         "💰 Flussi finanziari",
         "🎯 Milestone",
         "📄 Rendicontazione",
+        "✈️ Missioni",
+        "💬 Commenti",
         "🚦 Stato",
     ]
 )
+
+with tab_comm:
+    blocco_commenti(
+        "iniziativa",
+        sel.id,
+        persona,
+        is_admin,
+        {p.id: p.nome_completo for p in persona_repo.list_persone()},
+    )
+
+with tab_miss:
+    missioni_p = missione_repo.list_missioni(iniziativa_id=sel.id)
+    if not missioni_p:
+        st.info("Nessuna missione associata a questo progetto.")
+    else:
+        tot_miss = missione_repo.totali_per_missione([str(m.id) for m in missioni_p])
+        nomi_p = {p.id: p.nome_completo for p in persona_repo.list_persone()}
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Destinazione": m.destinazione,
+                        "Periodo": m.periodo,
+                        "Persona": nomi_p.get(m.persona_id, "—"),
+                        "Stato": STATO_MISSIONE_BADGE.get(m.stato, m.stato),
+                        "Previsto €": float(m.spesa_prevista or 0),
+                        "Speso €": float(tot_miss.get(str(m.id), 0) or 0),
+                        "Rimborso": STATO_RIMBORSO_BADGE.get(m.rimborso_stato, ""),
+                    }
+                    for m in missioni_p
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        speso_miss = sum(float(tot_miss.get(str(m.id), 0) or 0) for m in missioni_p)
+        prev_miss = sum(float(m.spesa_prevista or 0) for m in missioni_p)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Missioni", len(missioni_p))
+        m2.metric("Preventivato", f"{prev_miss:,.2f} €")
+        m3.metric("Speso", f"{speso_miss:,.2f} €")
+    st.caption("Le missioni si creano e gestiscono nella pagina **Missioni**.")
 
 with tab_fin:
     st.markdown("**Info generali finanziarie**")

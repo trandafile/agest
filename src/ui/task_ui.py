@@ -16,6 +16,7 @@ from src.domain.models import (
     Task,
 )
 from src.lib.labels import etichetta_con_tag
+from src.ui.commenti_ui import blocco_commenti
 
 STATO_BADGE_D = {
     "da_fare": "⚪ Da fare",
@@ -109,6 +110,8 @@ def task_dialog(
         st.info(
             "Sola lettura: puoi modificare solo i task di cui sei owner/supervisor."
         )
+        st.divider()
+        blocco_commenti("task", task.id, persona, is_admin, nomi)
         return
 
     c1, c2, c3 = st.columns(3)
@@ -186,6 +189,9 @@ def task_dialog(
     if b2.button("🗂 Archivia", use_container_width=True):
         task_repo.update_task(task.id, archiviato=True)
         st.rerun()
+
+    st.divider()
+    blocco_commenti("task", task.id, persona, is_admin, nomi)
 
 
 def form_nuovo_task(

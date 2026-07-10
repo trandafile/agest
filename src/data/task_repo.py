@@ -110,6 +110,9 @@ def update_task(task_id: UUID | str, **campi) -> Task:
 
 
 def delete_task(task_id: UUID | str) -> None:
+    from src.data import commento_repo
+
+    commento_repo.delete_commenti_di("task", task_id)
     db.execute("delete from task where id = %s", (str(task_id),))
 
 

@@ -292,6 +292,137 @@ class Milestone(BaseModel):
     genera_pagamento: bool = False
 
 
+ENTITA_COMMENTABILI = (
+    "task",
+    "deliverable",
+    "milestone",
+    "iniziativa",
+    "missione",
+)
+
+
+class Commento(BaseModel):
+    """Commento generico su un modulo (stile MAIC tasks)."""
+
+    id: UUID | None = None
+    entita: str
+    entita_id: UUID
+    autore_id: UUID | None = None
+    testo: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @property
+    def modificato(self) -> bool:
+        if not (self.created_at and self.updated_at):
+            return False
+        return (self.updated_at - self.created_at).total_seconds() > 1
+
+
+class StatoMissione(enum.StrEnum):
+    bozza = "bozza"
+    richiesta = "richiesta"
+    autorizzata = "autorizzata"
+    respinta = "respinta"
+    conclusa = "conclusa"
+
+
+class StatoRimborso(enum.StrEnum):
+    non_richiesto = "non_richiesto"
+    richiesto = "richiesto"
+    liquidato = "liquidato"
+
+
+CATEGORIE_SPESA_MISSIONE = (
+    "viaggio",
+    "vitto",
+    "alloggio",
+    "iscrizione",
+    "altro",
+)
+
+STATO_MISSIONE_BADGE = {
+    "bozza": "⚪ Bozza",
+    "richiesta": "🟠 Da autorizzare",
+    "autorizzata": "🟢 Autorizzata",
+    "respinta": "🔴 Respinta",
+    "conclusa": "🔵 Conclusa",
+}
+STATO_RIMBORSO_BADGE = {
+    "non_richiesto": "⚪ Non richiesto",
+    "richiesto": "🟠 Rimborso richiesto",
+    "liquidato": "🟢 Rimborsato",
+}
+CATEGORIA_SPESA_ICONA = {
+    "viaggio": "✈️",
+    "vitto": "🍽️",
+    "alloggio": "🏨",
+    "iscrizione": "🎫",
+    "altro": "📎",
+}
+
+
+class MissioneSpesa(BaseModel):
+    """Una spesa effettivamente sostenuta durante la missione."""
+
+    id: UUID | None = None
+    missione_id: UUID
+    data: date
+    categoria: str = "altro"
+    descrizione: str | None = None
+    importo: Decimal = Field(ge=0)
+    created_at: datetime | None = None
+
+
+class Missione(BaseModel):
+    """Trasferta: dove, quando, per quale progetto, con che obiettivo."""
+
+    id: UUID | None = None
+    iniziativa_id: UUID | None = None
+    persona_id: UUID
+    destinazione: str
+    data_inizio: date
+    data_fine: date
+    obiettivo: str | None = None
+    spesa_prevista: Decimal | None = Field(default=None, ge=0)
+    stato: str = "bozza"
+    autorizzata_da: UUID | None = None
+    autorizzata_il: datetime | None = None
+    note_autorizzazione: str | None = None
+    rimborso_stato: str = "non_richiesto"
+    rimborso_richiesto_il: datetime | None = None
+    rimborso_liquidato_il: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @field_validator("data_fine")
+    @classmethod
+    def _periodo_coerente(cls, v: date, info) -> date:
+        inizio = info.data.get("data_inizio")
+        if inizio is not None and v < inizio:
+            raise ValueError("data_fine non puo' precedere data_inizio")
+        return v
+
+    @property
+    def giorni(self) -> int:
+        return (self.data_fine - self.data_inizio).days + 1
+
+    @property
+    def periodo(self) -> str:
+        if self.data_inizio == self.data_fine:
+            return f"{self.data_inizio:%d/%m/%Y}"
+        return f"{self.data_inizio:%d/%m/%Y} → {self.data_fine:%d/%m/%Y}"
+
+    @property
+    def autorizzata(self) -> bool:
+        return self.stato in ("autorizzata", "conclusa")
+
+    @property
+    def modificabile(self) -> bool:
+        """Bozza e respinta si modificano; autorizzata/conclusa no."""
+        return self.stato in ("bozza", "respinta")
+
+
 class Festivita(BaseModel):
     id: UUID | None = None
     data: date
