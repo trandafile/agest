@@ -154,6 +154,22 @@ Rispetta la Definition of Done in agents.md.
 
 ---
 
+## Prompt 5 — Estensioni v3 (09/2026): eseguito
+
+```
+Migliora agest con: (1) task manager al livello di MAIC tasks; (2) visione
+chiara della gestione finanziaria e della sostenibilità economica (standard:
+Piano strategico 2026-2030 §6), con visibilità limitata; (3) due livelli di
+visibilità: dipendenti e amministratori; (4) presentazioni automatiche sul
+template ANTECNICA_template_2026_v2.pptx, anche per la parte finanziaria;
+(5) GANTT pluriennale di progetti e proposte con carico previsto per anno.
+```
+
+Risultato in `project-specifications.md` §13 (migrazione 0015, pagine
+Portfolio / Sostenibilità / Presentazioni, task v3, notifiche).
+
+---
+
 ## Nota per le fasi
 
 - Non anticipare fasi: ogni prompt presuppone la fase precedente completata e testata.

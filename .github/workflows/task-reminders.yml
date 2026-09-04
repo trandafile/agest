@@ -1,0 +1,39 @@
+name: Task reminders
+
+# Manda i reminder anche se nessuno apre l'app (Streamlit Cloud dorme quando
+# è inattiva). Gira OGNI GIORNO: il briefing settimanale si deduplica da solo
+# per settimana ISO (parte il lunedì), mentre l'avviso «scadenza passata ieri»
+# va controllato tutti i giorni.
+#
+# Setup, una volta: repo → Settings → Secrets and variables → Actions:
+#   DATABASE_URL, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
+#   APP_URL (opzionale, default https://antgest.streamlit.app)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # 06:00 UTC → 07:00/08:00 Italia
+  workflow_dispatch:
+
+concurrency:
+  group: task-reminders
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-cron.txt
+      - run: python scripts/send_reminders.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          APP_URL: ${{ secrets.APP_URL }}

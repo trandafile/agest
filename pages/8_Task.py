@@ -19,7 +19,14 @@ from src.data import (
 )
 from src.domain.models import STATO_TASK_BADGE, RuoloSistema
 from src.lib.labels import etichetta_con_tag, etichetta_progetto
-from src.ui.task_ui import STATO_BADGE_D, form_nuovo_task, riga_task
+from src.ui.task_ui import (
+    KANBAN_STATI,
+    STATO_BADGE_D,
+    card_kanban,
+    form_nuovo_task,
+    riga_settimana,
+    riga_task,
+)
 
 persona = require_login()
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
@@ -32,7 +39,11 @@ nomi = {p.id: p.nome_completo for p in persona_repo.list_persone()}
 iniziative = iniziativa_repo.list_iniziative()
 titoli_ini = {i.id: etichetta_con_tag(i) for i in iniziative}
 
-vista = st.radio("Vista", ["🌳 Albero per progetto", "📋 Elenco"], horizontal=True)
+vista = st.radio(
+    "Vista",
+    ["🌳 Albero per progetto", "📋 Elenco", "📌 Kanban", "🗓 La mia settimana"],
+    horizontal=True,
+)
 
 with st.expander("📄 Esporta report attività"):
     from src.lib.report_attivita import report_markdown, tasks_xlsx
@@ -222,6 +233,68 @@ if vista.startswith("🌳"):
                 [x for x in senza_progetto if not x.parent_task_id], key=_key
             ):
                 _render_task_con_figli(t, "nop")
+
+# =====================================================================
+# VISTA KANBAN: una colonna per stato, spostamento con ◀ ▶
+# =====================================================================
+elif vista.startswith("📌"):
+    colonne = st.columns(len(KANBAN_STATI))
+    for col, stato in zip(colonne, KANBAN_STATI, strict=True):
+        in_col = [t for t in tasks if t.stato == stato]
+        with col:
+            st.markdown(f"**{STATO_BADGE_D[stato]}** · {len(in_col)}")
+            for t in sorted(in_col, key=_key):
+                card_kanban(t, nomi, titoli_ini, persona, is_admin)
+    st.caption(
+        "I task completati compaiono solo se lo stato «completato» è fra i filtri."
+    )
+
+# =====================================================================
+# VISTA «LA MIA SETTIMANA»: aggiornamento in linea (My Week di MAIC tasks)
+# =====================================================================
+elif vista.startswith("🗓"):
+    miei = [
+        t
+        for t in task_repo.list_tasks(include_archiviati=False)
+        if t.stato in ("da_fare", "in_corso", "bloccato")
+        and (
+            t.owner_id == persona.id
+            or (is_admin and filtro_persona and t.owner_id == filtro_persona.id)
+        )
+    ]
+    if is_admin and filtro_persona:
+        miei = [t for t in miei if t.owner_id == filtro_persona.id]
+    try:
+        from src.data import task_storico_repo
+
+        _ultimo = task_storico_repo.ultimo_aggiornamento_per_task()
+        fermo = {t.id: task_storico_repo.giorni_fermo(t, _ultimo) for t in miei}
+    except Exception:  # noqa: BLE001 — migrazione 0015 non ancora applicata
+        fermo = {}
+    oggi_ = date.today()
+    _prio = {"urgente": 0, "alta": 1, "media": 2, "bassa": 3, "nessuna": 4}
+
+    def _ordine(t):
+        scaduto = bool(t.scadenza and t.scadenza < oggi_)
+        return (
+            0 if t.stato == "bloccato" else 1,
+            0 if scaduto else 1,
+            -(fermo.get(t.id) or 0),
+            t.scadenza or date(9999, 12, 31),
+            _prio.get(t.priorita, 4),
+        )
+
+    st.caption(
+        "Tutti i tuoi task attivi in una pagina: cambia lo stato o aggiungi una "
+        "nota di avanzamento senza aprire i dettagli. Ordine: bloccati → scaduti → "
+        "fermi da più tempo → scadenza → priorità."
+    )
+    soglia = st.slider("Mostra solo task fermi da almeno (giorni)", 0, 60, 0)
+    miei = [t for t in miei if (fermo.get(t.id) or 0) >= soglia]
+    if not miei:
+        st.info("Nessun task attivo con questi criteri.")
+    for t in sorted(miei, key=_ordine):
+        riga_settimana(t, nomi, titoli_ini, persona, fermo.get(t.id))
 
 # =====================================================================
 # VISTA ELENCO (piatta)

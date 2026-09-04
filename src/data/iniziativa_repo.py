@@ -26,6 +26,7 @@ _UPD_INIZIATIVA = {
     "tipo_progetto_desc",
     "costo_complessivo",
     "finanziamento_complessivo",
+    "tipo_ricavo",
 }
 
 # Tutte le colonne TRANNE il logo (bytea pesante: si carica solo on demand)
@@ -33,7 +34,8 @@ _COLS = (
     "id, tipo, stato, codice, acronimo, titolo, controparte, responsabile_id, "
     "tipo_attivita_default, data_inizio, data_fine, ore_totali, "
     "budget_totale, probabilita_successo, note, cup, tipo_progetto_desc, "
-    "costo_complessivo, finanziamento_complessivo, created_at, updated_at"
+    "costo_complessivo, finanziamento_complessivo, tipo_ricavo, "
+    "created_at, updated_at"
 )
 
 

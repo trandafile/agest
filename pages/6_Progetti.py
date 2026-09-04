@@ -1,6 +1,8 @@
 """Progetti — esecuzione post-award (spec §7): baseline vs consuntivo, quote.
 
-Vista economica riservata: admin (scrittura) e pm (lettura dei propri).
+Due livelli (spec §13.1): l'amministratore vede la vista ECONOMICA (budget,
+consuntivo, flussi); il pm vede solo la vista OPERATIVA dei propri progetti
+(milestone, missioni, commenti, stato, anagrafica) senza importi.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from src.auth.session import require_role
+from src.auth.visibilita import vede_economia
 from src.data import (
     deliverable_repo,
     etichetta_repo,
@@ -37,6 +40,7 @@ from src.ui.commenti_ui import blocco_commenti
 
 persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
+economia = vede_economia(persona.ruolo_sistema)
 
 st.title("Progetti")
 
@@ -59,7 +63,7 @@ st.dataframe(
                 "Stato": "🟢 attivo" if p.stato == "attivo" else "⚫ chiuso",
                 "Inizio": f"{p.data_inizio:%d/%m/%Y}" if p.data_inizio else "",
                 "Fine": f"{p.data_fine:%d/%m/%Y}" if p.data_fine else "",
-                "Budget €": float(p.budget_totale or 0),
+                **({"Budget €": float(p.budget_totale or 0)} if economia else {}),
             }
             for p in progetti
         ]
@@ -107,38 +111,45 @@ quote = quote_rimanenti(
     },
 )
 
-# --- Riepilogo -----------------------------------------------------------------
-tot_budget = sum(q["budget"] for q in quote.values())
-tot_speso = sum(q["speso"] for q in quote.values())
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Budget (baseline)", f"{tot_budget:,.2f} €")
-c2.metric("Speso (consuntivo)", f"{tot_speso:,.2f} €")
-c3.metric(
-    "Quota rimanente",
-    f"{tot_budget - tot_speso:,.2f} €",
-    delta=None,
-)
-c4.metric(
-    "Avanzamento spesa",
-    f"{(tot_speso / tot_budget * 100):.0f}%" if tot_budget else "—",
-)
-ore_tot_cons = sum(o for (_, _, o) in ore_cons)
-st.caption(
-    f"Ore a timesheet: **{ore_tot_cons} h** → costo personale consuntivo "
-    f"**{costo_cons_personale:,.2f} €** (tariffe vigenti alla data)."
-)
+if economia:
+    # --- Riepilogo -----------------------------------------------------------------
+    tot_budget = sum(q["budget"] for q in quote.values())
+    tot_speso = sum(q["speso"] for q in quote.values())
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Budget (baseline)", f"{tot_budget:,.2f} €")
+    c2.metric("Speso (consuntivo)", f"{tot_speso:,.2f} €")
+    c3.metric(
+        "Quota rimanente",
+        f"{tot_budget - tot_speso:,.2f} €",
+        delta=None,
+    )
+    c4.metric(
+        "Avanzamento spesa",
+        f"{(tot_speso / tot_budget * 100):.0f}%" if tot_budget else "—",
+    )
+    ore_tot_cons = sum(o for (_, _, o) in ore_cons)
+    st.caption(
+        f"Ore a timesheet: **{ore_tot_cons} h** → costo personale consuntivo "
+        f"**{costo_cons_personale:,.2f} €** (tariffe vigenti alla data)."
+    )
 
-tab_quote, tab_fin, tab_ms, tab_rend, tab_miss, tab_comm, tab_stato = st.tabs(
-    [
-        "💶 Budget vs consuntivo",
-        "💰 Flussi finanziari",
-        "🎯 Milestone",
-        "📄 Rendicontazione",
-        "✈️ Missioni",
-        "💬 Commenti",
-        "🚦 Stato",
-    ]
-)
+if economia:
+    tab_quote, tab_fin, tab_ms, tab_rend, tab_miss, tab_comm, tab_stato = st.tabs(
+        [
+            "💶 Budget vs consuntivo",
+            "💰 Flussi finanziari",
+            "🎯 Milestone",
+            "📄 Rendicontazione",
+            "✈️ Missioni",
+            "💬 Commenti",
+            "🚦 Stato",
+        ]
+    )
+else:
+    tab_quote = tab_fin = None
+    tab_ms, tab_rend, tab_miss, tab_comm, tab_stato = st.tabs(
+        ["🎯 Milestone", "📄 Anagrafica", "✈️ Missioni", "💬 Commenti", "🚦 Stato"]
+    )
 
 with tab_comm:
     blocco_commenti(
@@ -164,8 +175,14 @@ with tab_miss:
                         "Periodo": m.periodo,
                         "Persona": nomi_p.get(m.persona_id, "—"),
                         "Stato": STATO_MISSIONE_BADGE.get(m.stato, m.stato),
-                        "Previsto €": float(m.spesa_prevista or 0),
-                        "Speso €": float(tot_miss.get(str(m.id), 0) or 0),
+                        **(
+                            {
+                                "Previsto €": float(m.spesa_prevista or 0),
+                                "Speso €": float(tot_miss.get(str(m.id), 0) or 0),
+                            }
+                            if economia
+                            else {}
+                        ),
                         "Rimborso": STATO_RIMBORSO_BADGE.get(m.rimborso_stato, ""),
                     }
                     for m in missioni_p
@@ -178,120 +195,125 @@ with tab_miss:
         prev_miss = sum(float(m.spesa_prevista or 0) for m in missioni_p)
         m1, m2, m3 = st.columns(3)
         m1.metric("Missioni", len(missioni_p))
-        m2.metric("Preventivato", f"{prev_miss:,.2f} €")
-        m3.metric("Speso", f"{speso_miss:,.2f} €")
+        if economia:
+            m2.metric("Preventivato", f"{prev_miss:,.2f} €")
+            m3.metric("Speso", f"{speso_miss:,.2f} €")
     st.caption("Le missioni si creano e gestiscono nella pagina **Missioni**.")
 
-with tab_fin:
-    st.markdown("**Info generali finanziarie**")
-    g1, g2, g3 = st.columns(3)
-    g1.metric(
-        "Costo complessivo",
-        (
-            f"{float(getf(sel, 'costo_complessivo') or 0):,.0f} €"
-            if getf(sel, "costo_complessivo")
-            else "—"
-        ),
-    )
-    g2.metric(
-        "Finanziamento",
-        (
-            f"{float(getf(sel, 'finanziamento_complessivo') or 0):,.0f} €"
-            if getf(sel, "finanziamento_complessivo")
-            else "—"
-        ),
-    )
-    # saldo movimenti bancari riconciliati a questo progetto
-    _mov = [
-        m
-        for m in finanza_repo.list_movimenti()
-        if str(m["iniziativa_id"]) == str(sel.id)
-    ]
-    _saldo_mov = sum(
-        float(m["importo"]) * (1 if m["segno"] == "entrata" else -1) for m in _mov
-    )
-    g3.metric("Saldo movimenti riconciliati", f"{_saldo_mov:,.2f} €")
+if economia:
+    with tab_fin:
+        st.markdown("**Info generali finanziarie**")
+        g1, g2, g3 = st.columns(3)
+        g1.metric(
+            "Costo complessivo",
+            (
+                f"{float(getf(sel, 'costo_complessivo') or 0):,.0f} €"
+                if getf(sel, "costo_complessivo")
+                else "—"
+            ),
+        )
+        g2.metric(
+            "Finanziamento",
+            (
+                f"{float(getf(sel, 'finanziamento_complessivo') or 0):,.0f} €"
+                if getf(sel, "finanziamento_complessivo")
+                else "—"
+            ),
+        )
+        # saldo movimenti bancari riconciliati a questo progetto
+        _mov = [
+            m
+            for m in finanza_repo.list_movimenti()
+            if str(m["iniziativa_id"]) == str(sel.id)
+        ]
+        _saldo_mov = sum(
+            float(m["importo"]) * (1 if m["segno"] == "entrata" else -1) for m in _mov
+        )
+        g3.metric("Saldo movimenti riconciliati", f"{_saldo_mov:,.2f} €")
 
-    if is_admin:
-        with st.form("info_fin", clear_on_submit=False):
-            f1, f2 = st.columns(2)
-            n_costo = f1.number_input(
-                "Costo complessivo €",
-                min_value=0.0,
-                step=1000.0,
-                value=float(getf(sel, "costo_complessivo") or 0),
-            )
-            n_finanz = f2.number_input(
-                "Finanziamento complessivo €",
-                min_value=0.0,
-                step=1000.0,
-                value=float(getf(sel, "finanziamento_complessivo") or 0),
-            )
-            if st.form_submit_button("Salva info finanziarie"):
-                iniziativa_repo.update_iniziativa(
-                    sel.id,
-                    costo_complessivo=n_costo or None,
-                    finanziamento_complessivo=n_finanz or None,
+        if is_admin:
+            with st.form("info_fin", clear_on_submit=False):
+                f1, f2 = st.columns(2)
+                n_costo = f1.number_input(
+                    "Costo complessivo €",
+                    min_value=0.0,
+                    step=1000.0,
+                    value=float(getf(sel, "costo_complessivo") or 0),
                 )
-                st.rerun()
-
-    st.divider()
-    st.markdown("**Calendario movimenti previsti** (flussi attesi del progetto)")
-    previsti = finanza_repo.list_movimenti_previsti(sel.id)
-    if previsti:
-        tot_e = sum(
-            float(p["importo"])
-            for p in previsti
-            if p["segno"] == "entrata" and not p["completata"]
-        )
-        tot_u = sum(
-            float(p["importo"])
-            for p in previsti
-            if p["segno"] == "uscita" and not p["completata"]
-        )
-        st.caption(
-            f"Da incassare: **{tot_e:,.2f} €** · da pagare: **{tot_u:,.2f} €** "
-            "(voci non completate)"
-        )
-        for p in previsti:
-            c1, c2, c3 = st.columns([5, 1.4, 1.1])
-            segno_ic = "🟢" if p["segno"] == "entrata" else "🔴"
-            quando = f"{p['data_attesa']:%d/%m/%Y}" if p["data_attesa"] else "—"
-            imp = f"{float(p['importo']):,.2f}"
-            c1.markdown(
-                f"{segno_ic} {p['descrizione'] or '—'} · **{imp} €** · 📅 {quando}"
-            )
-            if is_admin:
-                fatto = c2.checkbox(
-                    "completata", value=p["completata"], key=f"pv_{p['id']}"
+                n_finanz = f2.number_input(
+                    "Finanziamento complessivo €",
+                    min_value=0.0,
+                    step=1000.0,
+                    value=float(getf(sel, "finanziamento_complessivo") or 0),
                 )
-                if fatto != p["completata"]:
-                    finanza_repo.toggle_previsto_completato(p["id"], fatto)
+                if st.form_submit_button("Salva info finanziarie"):
+                    iniziativa_repo.update_iniziativa(
+                        sel.id,
+                        costo_complessivo=n_costo or None,
+                        finanziamento_complessivo=n_finanz or None,
+                    )
                     st.rerun()
-                if c3.button("🗑", key=f"pvdel_{p['id']}"):
-                    finanza_repo.delete_movimento_previsto(p["id"])
-                    st.rerun()
-            else:
-                c2.markdown("✅" if p["completata"] else "⏳")
-    else:
-        st.info("Nessun movimento previsto per questo progetto.")
 
-    if is_admin:
-        with st.form("nuovo_previsto", clear_on_submit=True):
-            n1, n2, n3, n4 = st.columns([3, 1, 1, 1.3])
-            pv_desc = n1.text_input("Descrizione")
-            pv_segno = n2.selectbox("Tipo", ["entrata", "uscita"])
-            pv_imp = n3.number_input("Importo €", min_value=0.0, step=100.0)
-            pv_data = n4.date_input("Data attesa", value=None)
-            if st.form_submit_button("➕ Aggiungi movimento previsto") and pv_imp > 0:
-                finanza_repo.create_movimento_previsto(
-                    sel.id,
-                    segno=pv_segno,
-                    importo=pv_imp,
-                    descrizione=pv_desc or None,
-                    data_attesa=pv_data,
+        st.divider()
+        st.markdown("**Calendario movimenti previsti** (flussi attesi del progetto)")
+        previsti = finanza_repo.list_movimenti_previsti(sel.id)
+        if previsti:
+            tot_e = sum(
+                float(p["importo"])
+                for p in previsti
+                if p["segno"] == "entrata" and not p["completata"]
+            )
+            tot_u = sum(
+                float(p["importo"])
+                for p in previsti
+                if p["segno"] == "uscita" and not p["completata"]
+            )
+            st.caption(
+                f"Da incassare: **{tot_e:,.2f} €** · da pagare: **{tot_u:,.2f} €** "
+                "(voci non completate)"
+            )
+            for p in previsti:
+                c1, c2, c3 = st.columns([5, 1.4, 1.1])
+                segno_ic = "🟢" if p["segno"] == "entrata" else "🔴"
+                quando = f"{p['data_attesa']:%d/%m/%Y}" if p["data_attesa"] else "—"
+                imp = f"{float(p['importo']):,.2f}"
+                c1.markdown(
+                    f"{segno_ic} {p['descrizione'] or '—'} · **{imp} €** · 📅 {quando}"
                 )
-                st.rerun()
+                if is_admin:
+                    fatto = c2.checkbox(
+                        "completata", value=p["completata"], key=f"pv_{p['id']}"
+                    )
+                    if fatto != p["completata"]:
+                        finanza_repo.toggle_previsto_completato(p["id"], fatto)
+                        st.rerun()
+                    if c3.button("🗑", key=f"pvdel_{p['id']}"):
+                        finanza_repo.delete_movimento_previsto(p["id"])
+                        st.rerun()
+                else:
+                    c2.markdown("✅" if p["completata"] else "⏳")
+        else:
+            st.info("Nessun movimento previsto per questo progetto.")
+
+        if is_admin:
+            with st.form("nuovo_previsto", clear_on_submit=True):
+                n1, n2, n3, n4 = st.columns([3, 1, 1, 1.3])
+                pv_desc = n1.text_input("Descrizione")
+                pv_segno = n2.selectbox("Tipo", ["entrata", "uscita"])
+                pv_imp = n3.number_input("Importo €", min_value=0.0, step=100.0)
+                pv_data = n4.date_input("Data attesa", value=None)
+                if (
+                    st.form_submit_button("➕ Aggiungi movimento previsto")
+                    and pv_imp > 0
+                ):
+                    finanza_repo.create_movimento_previsto(
+                        sel.id,
+                        segno=pv_segno,
+                        importo=pv_imp,
+                        descrizione=pv_desc or None,
+                        data_attesa=pv_data,
+                    )
+                    st.rerun()
 
 with tab_rend:
     st.caption(
@@ -308,8 +330,17 @@ with tab_rend:
             n_ente = a3.text_input(
                 "Ente finanziatore / Cliente", value=sel.controparte or ""
             )
-            r1, r2 = st.columns(2)
+            r1, r2, r3 = st.columns(3)
             n_cup = r1.text_input("CUP del progetto", value=getf(sel, "cup") or "")
+            _tipi_ric = ["agevolato", "mercato", "ricorrente"]
+            n_ricavo = r3.selectbox(
+                "Tipo di ricavo",
+                _tipi_ric,
+                index=_tipi_ric.index(
+                    getf(sel, "tipo_ricavo", "agevolato") or "agevolato"
+                ),
+                help="Per i KPI di sostenibilità: agevolato, mercato, ricorrente.",
+            )
             n_tipo = r2.text_input(
                 "Tipo del progetto",
                 value=getf(sel, "tipo_progetto_desc") or "",
@@ -323,6 +354,7 @@ with tab_rend:
                     controparte=n_ente or None,
                     cup=n_cup or None,
                     tipo_progetto_desc=n_tipo or None,
+                    tipo_ricavo=n_ricavo,
                 )
                 st.rerun()
         st.caption(
@@ -348,41 +380,42 @@ with tab_rend:
             f"**Tipo progetto:** {getf(sel, 'tipo_progetto_desc') or '—'}"
         )
 
-with tab_quote:
-    if quote:
-        df_q = pd.DataFrame(
-            [
-                {
-                    "Categoria": cat,
-                    "Budget €": float(v["budget"]),
-                    "Speso €": float(v["speso"]),
-                    "Rimanente €": float(v["rimanente"]),
-                    "": "🔴" if v["rimanente"] < 0 else "🟢",
-                }
-                for cat, v in sorted(quote.items())
-            ]
-        )
-        st.dataframe(df_q, hide_index=True, use_container_width=True)
-        for cat, v in quote.items():
-            if v["rimanente"] < 0:
-                st.error(
-                    f"⚠️ Overrun sulla categoria «{cat}»: "
-                    f"{float(v['rimanente']):,.2f} €"
-                )
-    else:
-        st.info("Nessuna voce di budget: aggiungile dalla proposta/progetto.")
-    if roll["per_persona"]:
-        st.markdown("**Baseline personale per persona** (pianificato)")
-        st.dataframe(
-            pd.DataFrame(
+if economia:
+    with tab_quote:
+        if quote:
+            df_q = pd.DataFrame(
                 [
-                    {"Persona": k, "Costo pianificato €": float(v)}
-                    for k, v in roll["per_persona"].items()
+                    {
+                        "Categoria": cat,
+                        "Budget €": float(v["budget"]),
+                        "Speso €": float(v["speso"]),
+                        "Rimanente €": float(v["rimanente"]),
+                        "": "🔴" if v["rimanente"] < 0 else "🟢",
+                    }
+                    for cat, v in sorted(quote.items())
                 ]
-            ),
-            hide_index=True,
-            use_container_width=True,
-        )
+            )
+            st.dataframe(df_q, hide_index=True, use_container_width=True)
+            for cat, v in quote.items():
+                if v["rimanente"] < 0:
+                    st.error(
+                        f"⚠️ Overrun sulla categoria «{cat}»: "
+                        f"{float(v['rimanente']):,.2f} €"
+                    )
+        else:
+            st.info("Nessuna voce di budget: aggiungile dalla proposta/progetto.")
+        if roll["per_persona"]:
+            st.markdown("**Baseline personale per persona** (pianificato)")
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {"Persona": k, "Costo pianificato €": float(v)}
+                        for k, v in roll["per_persona"].items()
+                    ]
+                ),
+                hide_index=True,
+                use_container_width=True,
+            )
 
 with tab_ms:
     ms = progetti_repo.list_milestones(sel.id)
@@ -416,7 +449,11 @@ with tab_ms:
                         "Prevista": (
                             f"{m.data_prevista:%d/%m/%Y}" if m.data_prevista else ""
                         ),
-                        "Incasso €": float(m.importo_incasso or 0) or None,
+                        **(
+                            {"Incasso €": float(m.importo_incasso or 0) or None}
+                            if economia
+                            else {}
+                        ),
                         "Pagamento": "💰" if getf(m, "genera_pagamento") else "",
                         "Stato": f"{icone[m.stato]} {m.stato}",
                     }
@@ -430,10 +467,11 @@ with tab_ms:
         incassi_maturati = sum(
             float(m.importo_incasso or 0) for m in ms if m.stato == "completata"
         )
-        st.caption(
-            f"Incassi previsti da milestone: **{incassi_previsti:,.2f} €**, "
-            f"maturati (completate): **{incassi_maturati:,.2f} €**"
-        )
+        if economia:
+            st.caption(
+                f"Incassi previsti da milestone: **{incassi_previsti:,.2f} €**, "
+                f"maturati (completate): **{incassi_maturati:,.2f} €**"
+            )
         if is_admin:
             m_sel = st.selectbox(
                 "Gestisci milestone",

@@ -23,9 +23,11 @@ _UPDATABLE = {
     "stato",
     "priorita",
     "ore_stimate",
+    "ore_effettive",
     "scadenza",
     "completato_il",
     "archiviato",
+    "last_reminder_sent",
 }
 
 
@@ -66,6 +68,7 @@ def create_task(
     priorita: str = "nessuna",
     scadenza: date | None = None,
     ore_stimate: float | None = None,
+    eseguito_da: str | None = None,
 ) -> Task:
     row = db.execute(
         """
@@ -87,11 +90,14 @@ def create_task(
             scadenza,
             ore_stimate,
         ),
+        user_email=eseguito_da,
     )[0]
     return _to_task(row)
 
 
-def update_task(task_id: UUID | str, **campi) -> Task:
+def update_task(task_id: UUID | str, eseguito_da: str | None = None, **campi) -> Task:
+    """Aggiorna i campi ammessi; `eseguito_da` (email) finisce nello storico
+    stati (trigger `fn_task_storico`, v3)."""
     campi = {k: v for k, v in campi.items() if k in _UPDATABLE}
     if not campi:
         raise ValueError("Nessun campo aggiornabile fornito.")
@@ -103,9 +109,11 @@ def update_task(task_id: UUID | str, **campi) -> Task:
     set_clause = ", ".join(f"{k} = %s" for k in campi)
     params = [str(v) if isinstance(v, UUID) else v for v in campi.values()]
     params.append(str(task_id))
-    row = db.execute(f"update task set {set_clause} where id = %s returning *", params)[
-        0
-    ]
+    row = db.execute(
+        f"update task set {set_clause} where id = %s returning *",
+        params,
+        user_email=eseguito_da,
+    )[0]
     return _to_task(row)
 
 
@@ -165,3 +173,27 @@ def tasks_per_calendario() -> list[dict]:
           and t.stato in ('da_fare','in_corso','bloccato')
         order by t.scadenza
         """)
+
+
+def aggiorna_rapido(
+    task_id: UUID | str,
+    stato: str | None,
+    nota: str | None,
+    descrizione_attuale: str | None,
+    eseguito_da: str | None = None,
+    oggi: date | None = None,
+) -> Task:
+    """«La mia settimana» (come My Week di MAIC tasks): cambio stato in linea
+    e/o nota di avanzamento datata accodata alla descrizione."""
+    oggi = oggi or date.today()
+    campi: dict = {}
+    if stato:
+        campi["stato"] = stato
+    if nota and nota.strip():
+        riga = f"**{oggi:%d/%m/%Y}** — {nota.strip()}"
+        campi["descrizione"] = (
+            f"{descrizione_attuale.rstrip()}\n\n{riga}" if descrizione_attuale else riga
+        )
+    if not campi:
+        raise ValueError("Niente da aggiornare.")
+    return update_task(task_id, eseguito_da=eseguito_da, **campi)

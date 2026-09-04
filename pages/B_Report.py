@@ -1,4 +1,5 @@
-"""Report per dipendente — carico task, ferie, presenze, ore. SOLO admin/pm."""
+"""Report per dipendente — carico task, ferie, presenze, ore. SOLO amministratore
+(dati HR: spec §13.1)."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from src.auth.session import require_role
 from src.data import persona_repo, report_repo
 from src.domain.models import RuoloSistema
 
-require_role(RuoloSistema.admin, RuoloSistema.pm)
+require_role(RuoloSistema.admin)
 
 st.title("Report per dipendente")
 

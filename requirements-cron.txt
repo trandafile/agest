@@ -1,0 +1,3 @@
+# Dipendenze minime per scripts/send_reminders.py (GitHub Actions)
+psycopg[binary]>=3.2,<4.0
+python-dotenv>=1.0

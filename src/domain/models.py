@@ -127,8 +127,15 @@ class Iniziativa(BaseModel):
     tipo_progetto_desc: str | None = None
     costo_complessivo: Decimal | None = None
     finanziamento_complessivo: Decimal | None = None
+    tipo_ricavo: str = "agevolato"  # agevolato | mercato | ricorrente (v3)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @property
+    def importo_riferimento(self) -> Decimal | None:
+        """Importo economico dell'iniziativa: finanziamento se noto, altrimenti
+        budget (v3: portfolio, pipeline, KPI)."""
+        return self.finanziamento_complessivo or self.budget_totale
 
     @property
     def etichetta(self) -> str:
@@ -243,9 +250,11 @@ class Task(BaseModel):
     stato: str = "da_fare"
     priorita: str = "nessuna"
     ore_stimate: Decimal | None = None
+    ore_effettive: Decimal | None = None  # v3
     scadenza: date | None = None
     completato_il: date | None = None
     archiviato: bool = False
+    last_reminder_sent: date | None = None  # v3
     created_at: datetime | None = None
 
     @property

@@ -10,7 +10,7 @@ App pubblica: **https://antgest.streamlit.app/**
 Fonte di verità funzionale: [`project-specifications.md`](project-specifications.md).
 Guida per l'agente di coding: [`agents.md`](agents.md). Fasi: [`prompts.md`](prompts.md).
 
-## Stato: TUTTE le fasi implementate ✅ (+ estensioni v2)
+## Stato: TUTTE le fasi implementate ✅ (+ estensioni v2 e v3)
 
 | Fase | Contenuto | Stato |
 |---|---|---|
@@ -19,8 +19,15 @@ Guida per l'agente di coding: [`agents.md`](agents.md). Fasi: [`prompts.md`](pro
 | 3 — Proposte & Progetti | Builder, pipeline pesata, capacity, conversione, baseline vs consuntivo, quote | ✅ |
 | 4 — Finanza | Import CSV/XLSX con mapping, riconciliazione, dashboard, export rendicontazione, audit | ✅ |
 | v2 | Dashboard personale + Task (stile MAIC tasks), menu a blocchi per ruolo, autofill timesheet, export XLSX SAL (CUP/logo), Presenze a foglio mensile con task, import banca (CAMT/CSV/PDF), proiezione flusso di cassa | ✅ |
+| v3 (09/2026) | **Due livelli di visibilità** (dipendente/amministratore), **Portfolio pluriennale** (GANTT progetti+proposte, carico per persona/anno, ricavi attesi), **Sostenibilità economica** (KPI del Piano strategico §6 con soglie, proiezione di cassa a 3 scenari fino a 36 mesi, backlog, stima utile e tasse), **Task v3** (kanban, «La mia settimana», ore stimate/effettive, storico stati, briefing e-mail), **Presentazioni .pptx** sul template ANTECNICA (attività, progetto, finanziario) | ✅ codice · ⏳ migrazione 0015 da applicare |
 
-Dettagli v2 in `project-specifications.md` §11.
+Dettagli v2 in `project-specifications.md` §11, v3 in §13.
+
+> **Dopo l'aggiornamento v3**: applicare la migrazione con
+> `python scripts/apply_schema.py` (crea `piano_ore_anno`, `parametri_finanziari`,
+> `task_storico`, colonne `tipo_ricavo`/`ore_effettive`/`last_reminder_sent`).
+> Per i reminder e-mail impostare i secrets di GitHub Actions (vedi
+> `.github/workflows/task-reminders.yml`).
 
 Regole critiche del timesheet replicate **lato DB** (trigger `fn_timesheet_guard`
 + funzione atomica `conferma_timesheet`): tetto 8h/giorno, Max mese per
@@ -112,7 +119,8 @@ un **mock login** di sviluppo.
 ## 7. Test, lint, format
 
 ```bash
-pytest                # 40 test: tariffe, guardie, timesheet, economia, finanza, AppTest
+pytest                # ~90 test: tariffe, guardie, timesheet, economia, finanza, portfolio,
+                      # sostenibilità, visibilità, notifiche, presentazioni, AppTest
 ruff check .
 black --check .
 ```
@@ -129,13 +137,21 @@ pages/
   5_Proposte.py            # builder, pipeline pesata, capacity, conversione
   6_Progetti.py            # baseline vs consuntivo, quote, milestone
   7_Finanza.py             # import, riconciliazione, dashboard, export, audit
-src/auth/                  # login Google (stile MAIC tasks), require_role()
+  8_Task.py                # albero / elenco / kanban / la mia settimana
+  9_ImportBanca.py         # estratti conto CAMT/CSV/PDF
+  A_Calendario.py, B_Report.py, C_Missioni.py
+  D_Portfolio.py           # v3: GANTT pluriennale, carico per anno, ricavi attesi
+  E_Presentazioni.py       # v3: report .pptx sul template ANTECNICA
+  F_Sostenibilita.py       # v3: KPI, scenari di cassa, utile e tasse (admin)
+assets/antecnica_template_2026.pptx  # template presentazioni
+src/auth/                  # login Google (stile MAIC tasks), require_role(), visibilita (2 livelli)
 src/data/                  # repository psycopg (niente query nelle pagine)
-src/domain/                # regole pure: timesheet, economia, finanza, tariffe
+src/domain/                # regole pure: timesheet, economia, finanza, tariffe, portfolio, sostenibilita
 src/ui/                    # componenti riusabili
-src/lib/                   # pool psycopg (+ GUC audit), utility date
-db/migrations/             # 0001 fondamenta, 0002 timesheet, 0003 proposte, 0004 finanza
+src/lib/                   # pool psycopg (+ GUC audit), utility, pptx_report, report_pack, notifiche
+db/migrations/             # 0001 … 0014 + 0015 v3 (piano ore, parametri, storico task)
 db/seed.sql                # dati di sviluppo (persone, tariffe, festività, demo)
 scripts/apply_schema.py    # applica migrazioni/seed a Neon
-tests/                     # pytest (40) + streamlit AppTest
+scripts/send_reminders.py  # reminder e-mail headless (GitHub Actions, cron 06:00 UTC)
+tests/                     # pytest + streamlit AppTest
 ```

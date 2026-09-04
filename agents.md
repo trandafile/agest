@@ -110,3 +110,6 @@ prompts.md
 - Non salvare il timesheet a ogni cella: salvataggio solo su **CONFERMA**, e blocco del mese confermato.
 - Non calcolare i costi con una tariffa "corrente" fissa: usare sempre la **tariffa vigente alla data** dell'attività.
 - Non duplicare Proposte e Progetti: sono la stessa `iniziativa`.
+- **Due livelli di visibilità** (v3, spec §13.1): tutto ciò che è economico (budget, costi, tariffe, flussi, KPI, importi nel portfolio e nelle presentazioni) è solo `admin`; usare `src/auth/visibilita.py` (`vede_economia`) invece di ragionare sul ruolo `pm`.
+- **Presentazioni**: solo layout/placeholder del template `assets/antecnica_template_2026.pptx`, grafici nativi (mai immagini); i builder in `src/lib/pptx_report.py` ricevono dizionari e devono restare testabili senza DB.
+- **Portfolio/sostenibilità**: distribuzioni pro-rata e KPI stanno in `src/domain/portfolio.py` e `src/domain/sostenibilita.py` (puri, con test); le pagine non devono ricalcolare.

@@ -1,6 +1,6 @@
 """Proposte — pianificazione pre-award (spec §6): builder, pipeline, capacity.
 
-Vista economica riservata: admin (scrittura) e pm (lettura delle proprie).
+Vista economica: SOLO amministratore (spec §13.1, due livelli di visibilità).
 """
 
 from __future__ import annotations
@@ -17,11 +17,12 @@ from src.domain.economia import (
     PianoPersona,
     capacity_per_persona,
     rollup_personale,
+    valore_atteso,
 )
 from src.domain.models import CATEGORIE_BUDGET, RuoloSistema
 from src.lib.labels import etichetta_progetto, getf
 
-persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
+persona = require_role(RuoloSistema.admin)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
 
 st.title("Proposte")
@@ -44,6 +45,14 @@ if proposte:
                 "Ente finanziatore": getf(p, "controparte") or "",
                 "Stato": p.stato,
                 "Budget €": float(p.budget_totale or 0),
+                "Prob. %": (
+                    float(p.probabilita_successo) * 100
+                    if p.probabilita_successo is not None
+                    else None
+                ),
+                "Valore atteso €": float(
+                    valore_atteso(p.budget_totale, p.probabilita_successo)
+                ),
                 "Responsabile": nomi.get(p.responsabile_id, "—"),
             }
             for p in proposte
@@ -52,9 +61,13 @@ if proposte:
     st.dataframe(pipe, hide_index=True, use_container_width=True)
     vive = [p for p in proposte if p.stato in ("bozza", "inviata")]
     tot_budget = sum(float(p.budget_totale or 0) for p in vive)
+    tot_atteso = sum(
+        float(valore_atteso(p.budget_totale, p.probabilita_successo)) for p in vive
+    )
     st.caption(
         f"Proposte attive (bozza+inviata): **{len(vive)}**, "
-        f"budget totale **{tot_budget:,.2f} €**"
+        f"budget totale **{tot_budget:,.2f} €**, valore atteso (pipeline pesata) "
+        f"**{tot_atteso:,.2f} €**"
     )
 else:
     st.info("Nessuna proposta.")
@@ -74,6 +87,13 @@ if is_admin:
             inizio = c4.date_input("Inizio previsto", value=date.today())
             fine = c5.date_input("Fine prevista", value=date.today())
             budget = st.number_input("Budget totale €", min_value=0.0, step=1000.0)
+            pb1, pb2 = st.columns(2)
+            prob = pb1.slider("Probabilità di successo %", 0, 100, 50, step=5)
+            tipo_ric = pb2.selectbox(
+                "Tipo di ricavo",
+                ["agevolato", "mercato", "ricorrente"],
+                help="Per i KPI di sostenibilità (quota ricavi da mercato/ricorrenti).",
+            )
             resp = st.selectbox(
                 "Responsabile (PM)",
                 options=[None] + persone,
@@ -93,6 +113,8 @@ if is_admin:
                         data_inizio=inizio,
                         data_fine=fine,
                         budget_totale=budget or None,
+                        probabilita_successo=prob / 100,
+                        tipo_ricavo=tipo_ric,
                         responsabile_id=resp.id if resp else None,
                     )
                     st.success("Proposta creata.")
@@ -125,6 +147,24 @@ if is_admin:
                     step=1000.0,
                     value=float(ep.budget_totale or 0),
                 )
+                m9, m10 = st.columns(2)
+                e_prob = m9.slider(
+                    "Probabilità di successo %",
+                    0,
+                    100,
+                    int(round(float(ep.probabilita_successo or 0) * 100)),
+                    step=5,
+                    key="e_prob",
+                )
+                _tipi_ric = ["agevolato", "mercato", "ricorrente"]
+                e_ric = m10.selectbox(
+                    "Tipo di ricavo",
+                    _tipi_ric,
+                    index=_tipi_ric.index(
+                        getf(ep, "tipo_ricavo", "agevolato") or "agevolato"
+                    ),
+                    key="e_ric",
+                )
                 idx_r = next(
                     (i for i, p in enumerate(persone) if p.id == ep.responsabile_id),
                     None,
@@ -145,6 +185,8 @@ if is_admin:
                         data_inizio=e_ini,
                         data_fine=e_fine,
                         budget_totale=e_budget or None,
+                        probabilita_successo=e_prob / 100,
+                        tipo_ricavo=e_ric,
                         responsabile_id=e_resp.id if e_resp else None,
                     )
                     st.success("Proposta aggiornata.")

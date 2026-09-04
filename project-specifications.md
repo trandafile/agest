@@ -262,3 +262,127 @@ Import del Google Sheet → tabelle finanza. Riconciliazione per commessa. Dashb
 - **i18n**: interfaccia in italiano.
 - **Testing**: unit test (pytest) sulle regole di dominio (timesheet, capacity, quote rimanenti), test sulle policy/enforcement dei ruoli, test dei flussi principali (es. `streamlit.testing` / AppTest).
 - **Manutenibilità**: migrazioni SQL versionate in `db/migrations/`; modelli `pydantic` allineati allo schema; dipendenze bloccate (`requirements.txt`/`pyproject.toml`).
+
+## 13. Estensioni v3 (09/2026) — task, sostenibilità, portfolio, presentazioni
+
+Obiettivi (richiesta 09/2026): task manager al livello di MAIC tasks; visione
+chiara della gestione finanziaria e della **sostenibilità economica** con
+visibilità limitata; **due livelli di visibilità** (dipendenti /
+amministratori); **presentazioni automatiche** sul template aziendale anche
+per la parte finanziaria; **GANTT pluriennale** dei progetti e delle proposte
+con carico previsto per anno. Migrazione: `db/migrations/0015_v3_*.sql`.
+
+### 13.1 Due livelli di visibilità (`src/auth/visibilita.py`)
+
+I ruoli di sistema restano tre (`admin`, `pm`, `dipendente`: il `pm` serve a
+individuare il responsabile di un'iniziativa), ma i livelli di visibilità sono
+**due**:
+
+| Livello | Ruoli | Vede |
+|---|---|---|
+| **amministratore** | `admin` | tutto: dati economici, Proposte, Progetti (vista economica), Finanza, Sostenibilità, Import banca, Anagrafica, Report dipendenti, Portfolio con importi/probabilità/capacity di tutti, Presentazioni (tutte, incluso il report finanziario) |
+| **dipendente** | `pm`, `dipendente` | dati propri (timesheet, presenze, ferie, missioni), task/deliverable di tutti (regola MAIC tasks), calendario, Portfolio **senza importi** (solo barre temporali, milestone, proprio carico), Presentazioni (attività e progetto **senza importi**). Il `pm` vede in più la vista **operativa** dei progetti di cui è responsabile (milestone, missioni senza importi, commenti, stato, anagrafica): mai budget, costi, flussi, tariffe. |
+
+Enforcement in Python (Opzione A): menu in `app.py` + guardie nelle pagine
+(`require_role(admin)` su Proposte, Finanza, Sostenibilità, Report dipendenti,
+Anagrafica, Import banca; `vede_economia()` nelle pagine miste). La matrice è
+in `MATRICE_VISIBILITA` e coperta da test.
+
+### 13.2 Portfolio pluriennale (`pages/D_Portfolio.py`, `src/domain/portfolio.py`)
+
+- **GANTT**: una riga per iniziativa (progetti attivi, chiusi opzionali,
+  proposte vive), esteso per anno con separatori annuali, linea «oggi»,
+  milestone come rombi; colori per stato (attivo / chiuso / proposta inviata /
+  bozza). Admin: hover con importo e probabilità.
+- **Ricavi attesi per anno** (admin): finanziamento (o budget) distribuito
+  **pro-rata sui giorni** di ciascun anno; proposte pesate per probabilità.
+- **Carico previsto per persona e anno**: tabella `piano_ore_anno`
+  (assegnazione × anno, come il foglio «impegno ore»); se assente, pro-rata di
+  `assegnazione.ore_pianificate`. Disponibilità = `monte_ore_annuo` × frazione
+  di contratto nell'anno. Saturazione = (impegnate su progetti attivi +
+  potenziali da proposte × probabilità) / disponibili, con alert > 100 %.
+  Confronto con il consuntivo a timesheet per anno.
+- Editor del piano ore per anno (admin) con avviso se la somma per anno ≠ ore
+  totali dell'assegnazione.
+- `iniziativa.tipo_ricavo` (`agevolato` | `mercato` | `ricorrente`) e
+  probabilità di successo modificabili in Proposte/Progetti.
+
+### 13.3 Sostenibilità economica (`pages/F_Sostenibilita.py`, `src/domain/sostenibilita.py`, `src/lib/sostenibilita_calc.py`) — solo amministratore
+
+Standard di riferimento: **Piano strategico ANTECNICA 2026-2030 §6**
+(«Indicatori di sostenibilità economica») e i fogli oggi tenuti a mano
+(«Disponibilità in cassa», «stima utile e tasse», «Costo Personale»).
+
+**Cruscotto KPI** (semaforo: 🟢 sopra target · 🟠 fra allarme e target · 🔴 sotto allarme):
+
+| KPI | Definizione | Allarme | Target |
+|---|---|---|---|
+| Autonomia di cassa | saldo / costi mensili strutturali | < 6 mesi | ≥ 12 mesi |
+| Backlog coverage | Σ(finanziamento − incassato) progetti attivi / costi mensili | < 9 mesi | 12–15 mesi |
+| Margine operativo (proxy EBITDA) | (entrate − uscite) / entrate dell'anno, da movimenti | < 0 % | ≥ 10 % (2028), ≥ 20 % (2030) |
+| Concentrazione clienti | peso top-3 controparti sulle entrate dell'anno | > 80 % | ≤ 60 % |
+| Quota ricavi da mercato | entrate di iniziative `mercato`+`ricorrente` / totale | < 40 % | ≥ 70 % (2030) |
+| Ricavi ricorrenti | entrate di iniziative `ricorrente` / totale | < 10 % | ≥ 40 % (2030) |
+| Tariffa media / costo pieno FTE | (Σ finanziamento / Σ ore pianificate) / costo pieno €/h | < 1,6× | ≥ 1,6× |
+
+Costo pieno €/h = (costo personale annuo + costi indiretti) / (FTE × ore
+vendibili), come il foglio «Costo Personale» (parametri annuali in
+`parametri_finanziari`: costi fissi mensili, costo personale, indiretti, FTE,
+ore vendibili, aliquota fiscale stimata 27,9 % = IRES 24 % + IRAP 3,9 %,
+saldo di cassa verificato se lo storico movimenti è incompleto).
+
+**Proiezione di cassa a scenari** (6–36 mesi): *firmato* (documenti aperti,
+milestone di pagamento, movimenti previsti dei progetti), *pesato* (+ proposte
+vive × probabilità, pro-rata sui mesi), *ottimista* (+ proposte intere). Base
+dei costi mensili a scelta: parametro fisso, stima storica (media 3 mesi) o
+**analitica** (costo personale previsto = tariffa vigente × monte ore/12 per le
+persone in forza + spese periodiche espanse per periodicità). Alert sul primo
+mese negativo e saldo minimo per scenario; totali per anno; backlog per
+progetto; stima **utile e tasse** dell'esercizio (consuntivo + residuo
+previsto dallo scenario pesato).
+
+### 13.4 Task v3 (parità con MAIC tasks, adattata)
+
+- Viste della pagina Task: albero, elenco, **kanban** (colonne per stato,
+  spostamento ◀ ▶), **La mia settimana** (stato modificabile in linea + nota
+  di avanzamento datata accodata alla descrizione; ordine bloccati → scaduti →
+  fermi da più tempo → scadenza → priorità; filtro «fermi da ≥ N giorni»).
+- `task.ore_stimate` esposto nei form; `task.ore_effettive` (informativo: il
+  timesheet resta la fonte ufficiale).
+- **Storico stati** (`task_storico`, trigger `fn_task_storico`, attribuito
+  all'email in `app.current_email`): visibile nel dialog e usato per la
+  staleness e per la sintesi «cosa è cambiato» del report attività.
+- **Notifiche e-mail** (`src/lib/notifiche.py`, `scripts/send_reminders.py`,
+  `.github/workflows/task-reminders.yml`): briefing settimanale del lunedì
+  (scaduti / in scadenza 14 g / da sbloccare come supervisor / attivi;
+  dedup per settimana ISO in `persona.last_reminder_sent`) e avviso
+  «scadenza passata ieri» (dedup in `task.last_reminder_sent`). SMTP dai
+  secrets di GitHub Actions; senza SMTP il job è un dry-run.
+- Non replicati (scelta): sign-off dei deliverable, papers/conferenze, Scopus.
+
+### 13.5 Presentazioni automatiche (`pages/E_Presentazioni.py`, `src/lib/pptx_report.py`, `src/lib/report_pack.py`)
+
+Template: `assets/antecnica_template_2026.pptx` (copia di
+`ANTECNICA_template_2026_v2.pptx`). Disciplina: contenuti nei placeholder dei
+layout (TITLE, SECTION, CONTENT/CONTENT_DARK, TWO_COLUMNS, TITLE_ONLY,
+CLOSING); grafici **nativi** PowerPoint; card KPI come la slide «Measured
+performance» del template; GANTT disegnato con forme; tabelle native
+paginate. I builder consumano dizionari («pack») e sono testati senza DB.
+
+| Deck | Chi | Contenuto |
+|---|---|---|
+| Report attività | tutti (il dipendente può limitarsi ai propri task) | GANTT del portafoglio, sintesi (attivi, in ritardo, bloccati, completati/avviati nel periodo, scadenze 30 g), un albero per progetto (milestone, deliverable → task → subtask con stato/scadenza/owner), carico e pagina per persona, prossime scadenze |
+| Report progetto (SAL) | admin (con importi), pm/dipendenti (senza) | KPI, cronoprogramma, budget vs consuntivo, milestone, albero attività, movimenti previsti, ore per persona (piano per anno vs consuntivo) |
+| Report finanziario | solo amministratore | KPI con soglie, cassa/costi/backlog/pipeline, cash flow dell'anno, proiezione a scenari, totali per anno, storico entrate/uscite, backlog contratti, P&L per progetto, ricavi attesi per anno, stima utile e tasse, scadenzario |
+
+Consegna: download dalla pagina Presentazioni (nome file datato). Invio
+automatico/Drive: predisposto dalla libreria Drive esistente, non attivato.
+
+### 13.6 Verifiche svolte e passi operativi
+
+- Migrazione 0015 validata su Neon in transazione con ROLLBACK (trigger
+  storico incluso); **da applicare** con `python scripts/apply_schema.py`.
+- Test pytest: portfolio, sostenibilità, visibilità, notifiche, presentazioni
+  (deck riaperti con python-pptx; render visivo con LibreOffice).
+- Dipendenze nuove: `plotly`, `python-pptx` (in `requirements.txt`);
+  `requirements-cron.txt` per il job GitHub Actions.

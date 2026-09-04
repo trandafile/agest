@@ -172,26 +172,67 @@ def task_dialog(
         format_func=lambda i: dip_by_id[i].titolo,
     )
 
+    o1, o2 = st.columns(2)
+    ore_st = o1.number_input(
+        "Ore stimate",
+        min_value=0.0,
+        step=0.5,
+        value=float(task.ore_stimate or 0),
+        help="Stima dell'impegno (alimenta il carico per persona).",
+    )
+    ore_eff = o2.number_input(
+        "Ore effettive",
+        min_value=0.0,
+        step=0.5,
+        value=float(getattr(task, "ore_effettive", None) or 0),
+        help=(
+            "Ore realmente spese (informativo: il timesheet resta la fonte "
+            "ufficiale)."
+        ),
+    )
     note = st.text_area("Descrizione / note", value=task.descrizione or "")
     b1, b2 = st.columns(2)
     if b1.button("💾 Salva", type="primary", use_container_width=True):
         task_repo.update_task(
             task.id,
+            eseguito_da=persona.email,
             stato=stato,
             priorita=prio,
             scadenza=scad,
             deliverable_id=deliverable_id,
             descrizione=note or None,
+            ore_stimate=ore_st or None,
+            ore_effettive=ore_eff or None,
         )
         etichetta_repo.set_etichette_task(task.id, et_scelte)
         etichetta_repo.set_dipendenze_task(task.id, dip_scelte)
         st.rerun()
     if b2.button("🗂 Archivia", use_container_width=True):
-        task_repo.update_task(task.id, archiviato=True)
+        task_repo.update_task(task.id, eseguito_da=persona.email, archiviato=True)
         st.rerun()
 
+    _storico_stati(task)
     st.divider()
     blocco_commenti("task", task.id, persona, is_admin, nomi)
+
+
+def _storico_stati(task: Task) -> None:
+    """Cambi di stato (tabella `task_storico`, v3): tollerante se la
+    migrazione 0015 non è ancora applicata."""
+    try:
+        from src.data import task_storico_repo
+
+        righe = task_storico_repo.storico_task(task.id)
+    except Exception:  # noqa: BLE001
+        return
+    if not righe:
+        return
+    with st.expander(f"🕓 Storico stati ({len(righe)})"):
+        for r in righe:
+            prec = STATO_TASK_BADGE.get(r["stato_prec"], r["stato_prec"] or "creato")
+            nuovo = STATO_TASK_BADGE.get(r["stato_nuovo"], r["stato_nuovo"])
+            chi = f" · {r['cambiato_da']}" if r.get("cambiato_da") else ""
+            st.caption(f"{r['cambiato_il']:%d/%m/%Y %H:%M} — {prec} → {nuovo}{chi}")
 
 
 def form_nuovo_task(
@@ -248,7 +289,9 @@ def form_nuovo_task(
                 format_func=lambda i: ("—" if i is None else etichetta_con_tag(i)),
             )
         scad = f5.date_input("Scadenza (opz.)", value=None)
-        desc = st.text_area("Descrizione (opz.)")
+        f6, f7 = st.columns([1, 3])
+        ore_st = f6.number_input("Ore stimate (opz.)", min_value=0.0, step=0.5)
+        desc = f7.text_area("Descrizione (opz.)")
         if st.form_submit_button("Crea task", type="primary"):
             if not titolo:
                 st.error("Il titolo è obbligatorio.")
@@ -267,5 +310,106 @@ def form_nuovo_task(
                     descrizione=desc or None,
                     priorita=prio,
                     scadenza=scad,
+                    ore_stimate=ore_st or None,
+                    eseguito_da=default_owner.email,
                 )
                 st.rerun()
+
+
+def riga_settimana(
+    task: Task,
+    nomi: dict,
+    titoli_iniziative: dict,
+    persona: Persona,
+    giorni_fermo: int | None,
+    key_prefix: str = "wk",
+) -> None:
+    """«La mia settimana» (My Week di MAIC tasks): stato modificabile IN LINEA
+    e nota di avanzamento, senza aprire il dialog."""
+    c1, c2, c3, c4 = st.columns([4.2, 1.6, 3, 1.2])
+    fermo = (
+        f" · ⏸ fermo da {giorni_fermo}g" if giorni_fermo and giorni_fermo >= 14 else ""
+    )
+    c1.markdown(
+        f"**{task.titolo}** · {PRIORITA_BADGE.get(task.priorita, '')} · "
+        f"{scadenza_chip(task.scadenza)}  \n<small>📁 "
+        f"{titoli_iniziative.get(task.iniziativa_id, '—')}{fermo}</small>",
+        unsafe_allow_html=True,
+    )
+    stati = [s for s in STATI_TASK if s != "annullato"]
+    nuovo = c2.selectbox(
+        "Stato",
+        stati,
+        index=stati.index(task.stato) if task.stato in stati else 0,
+        format_func=lambda s: STATO_TASK_BADGE[s],
+        key=f"{key_prefix}_st_{task.id}",
+        label_visibility="collapsed",
+    )
+    nota = c3.text_input(
+        "Nota",
+        placeholder="nota di avanzamento (opz.)",
+        key=f"{key_prefix}_nt_{task.id}",
+        label_visibility="collapsed",
+    )
+    if c4.button(
+        "Aggiorna", key=f"{key_prefix}_ok_{task.id}", use_container_width=True
+    ):
+        if nuovo == task.stato and not nota.strip():
+            st.toast("Niente da aggiornare.")
+        else:
+            task_repo.aggiorna_rapido(
+                task.id,
+                stato=nuovo if nuovo != task.stato else None,
+                nota=nota,
+                descrizione_attuale=task.descrizione,
+                eseguito_da=persona.email,
+            )
+            st.rerun()
+
+
+KANBAN_STATI = ("da_fare", "in_corso", "bloccato", "completato")
+
+
+def card_kanban(
+    task: Task,
+    nomi: dict,
+    titoli_iniziative: dict,
+    persona: Persona,
+    is_admin: bool,
+    key_prefix: str = "kb",
+) -> None:
+    """Card compatta per la vista kanban con spostamento fra colonne."""
+    with st.container(border=True):
+        sub_ = "↳ " if task.parent_task_id else ""
+        st.markdown(
+            f"{sub_}**{task.titolo}**  \n<small>"
+            f"{PRIORITA_BADGE.get(task.priorita, '')} · "
+            f"{scadenza_chip(task.scadenza)}  \n👤 {nomi.get(task.owner_id, '—')} · 📁 "
+            f"{titoli_iniziative.get(task.iniziativa_id, '—')}</small>",
+            unsafe_allow_html=True,
+        )
+        if task_repo.puo_modificare(task, persona.id, is_admin):
+            i = KANBAN_STATI.index(task.stato) if task.stato in KANBAN_STATI else 0
+            b1, b2, b3 = st.columns(3)
+            if i > 0 and b1.button(
+                "◀",
+                key=f"{key_prefix}_prev_{task.id}",
+                help=STATO_TASK_BADGE[KANBAN_STATI[i - 1]],
+            ):
+                task_repo.update_task(
+                    task.id, eseguito_da=persona.email, stato=KANBAN_STATI[i - 1]
+                )
+                st.rerun()
+            if b2.button("⋯", key=f"{key_prefix}_det_{task.id}", help="Dettagli"):
+                task_dialog(task, nomi, titoli_iniziative, persona, is_admin)
+            if i < len(KANBAN_STATI) - 1 and b3.button(
+                "▶",
+                key=f"{key_prefix}_next_{task.id}",
+                help=STATO_TASK_BADGE[KANBAN_STATI[i + 1]],
+            ):
+                task_repo.update_task(
+                    task.id, eseguito_da=persona.email, stato=KANBAN_STATI[i + 1]
+                )
+                st.rerun()
+        elif st.button("⋯", key=f"{key_prefix}_det_{task.id}", help="Dettagli"):
+            task_dialog(task, nomi, titoli_iniziative, persona, is_admin)
