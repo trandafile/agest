@@ -20,9 +20,15 @@ from src.lib.labels import etichetta_progetto
 from src.lib.pptx_report import (
     build_report_attivita,
     build_report_finanziario,
+    build_report_personale,
     build_report_progetto,
 )
-from src.lib.report_pack import pack_attivita, pack_finanziario, pack_progetto
+from src.lib.report_pack import (
+    pack_attivita,
+    pack_finanziario,
+    pack_personale,
+    pack_progetto,
+)
 from src.lib.sostenibilita_calc import BASI
 
 MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -37,10 +43,33 @@ st.caption(
     "progetto e (solo amministrazione) finanziario."
 )
 
-tabs = ["📋 Report attività", "📁 Report progetto"] + (
+tabs = ["👤 Le mie attività", "📋 Report attività", "📁 Report progetto"] + (
     ["💶 Report finanziario"] if is_admin else []
 )
-tab_att, tab_prog, *resto = st.tabs(tabs)
+tab_mie, tab_att, tab_prog, *resto = st.tabs(tabs)
+
+# --- Le mie attività (tutti) -------------------------------------------------------
+with tab_mie:
+    st.markdown(
+        "La presentazione con cui **raccontare il tuo lavoro** in riunione: "
+        "sintesi, cosa hai completato, su cosa stai lavorando (per progetto), "
+        "i tuoi deliverable, cosa ti blocca e cosa scade."
+    )
+    periodo_mio = st.select_slider(
+        "Periodo da raccontare (giorni)", [30, 60, 90, 180, 365], value=90
+    )
+    if st.button("⚙️ Genera la mia presentazione", type="primary", key="gen_mie"):
+        with st.spinner("Preparo le slide…"):
+            dati = build_report_personale(
+                pack_personale(persona, periodo_giorni=periodo_mio)
+            )
+        st.session_state["pptx_mie"] = dati
+    if st.session_state.get("pptx_mie"):
+        cognome = persona.cognome.replace(" ", "_")
+        nome = f"ANTECNICA_mie_attivita_{cognome}_{oggi:%Y%m%d}.pptx"
+        st.download_button(
+            "⬇️ Scarica " + nome, st.session_state["pptx_mie"], nome, MIME, key="dl_mie"
+        )
 
 # --- Report attività ---------------------------------------------------------------
 with tab_att:

@@ -43,6 +43,11 @@ MESSAGGI: dict[str, str] = {
     ),
     "timesheet_ora_ore_check": "Le ore di una singola cella devono essere fra 0 e 8.",
     # task e attività
+    "deliverable_tipo_chk": (
+        "Tipo di deliverable non valido: ammessi prototipo, report, paper "
+        "(oppure altro)."
+    ),
+    "deliverable_stato_check": "Stato del deliverable non valido.",
     "task_stato_check": "Stato del task non valido.",
     "task_priorita_check": "Priorità del task non valida.",
     "task_dipendenza_no_self": "Un task non può dipendere da sé stesso.",

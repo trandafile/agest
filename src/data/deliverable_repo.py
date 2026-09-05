@@ -41,6 +41,46 @@ def list_deliverables(
     return [_to_deliverable(r) for r in db.query(sql, params)]
 
 
+def get_deliverable(deliverable_id: UUID | str) -> Deliverable | None:
+    row = db.query_one(
+        "select * from deliverable where id = %s", (str(deliverable_id),)
+    )
+    return _to_deliverable(row) if row else None
+
+
+def avanzamento_task() -> dict[str, dict]:
+    """{deliverable_id: {totali, completati, in_ritardo}} sui task non archiviati.
+
+    Serve alle barre di avanzamento: un deliverable "vale" i task che lo
+    compongono.
+    """
+    rows = db.query("""
+        select deliverable_id,
+               count(*) as totali,
+               count(*) filter (where stato = 'completato') as completati,
+               count(*) filter (
+                   where stato in ('da_fare','in_corso','bloccato')
+                     and scadenza < current_date
+               ) as in_ritardo
+        from task
+        where deliverable_id is not null and not archiviato
+        group by 1
+        """)
+    return {
+        str(r["deliverable_id"]): {
+            "totali": int(r["totali"]),
+            "completati": int(r["completati"]),
+            "in_ritardo": int(r["in_ritardo"]),
+        }
+        for r in rows
+    }
+
+
+def puo_modificare(deliverable, persona_id, is_admin: bool) -> bool:
+    """Regola MAIC tasks: modifica owner/supervisor (o admin)."""
+    return is_admin or persona_id in (deliverable.owner_id, deliverable.supervisor_id)
+
+
 def create_deliverable(
     iniziativa_id: UUID | str,
     titolo: str,

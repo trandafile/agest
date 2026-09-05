@@ -36,6 +36,7 @@ def main() -> None:
 
     blocco_attivita = [
         st.Page("pages/8_Task.py", title="Task", icon="✅"),
+        st.Page("pages/G_Deliverable.py", title="Deliverable", icon="📦"),
         st.Page("pages/A_Calendario.py", title="Calendario", icon="📅"),
         st.Page("pages/C_Missioni.py", title="Missioni", icon="✈️"),
     ]

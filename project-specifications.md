@@ -418,3 +418,45 @@ violato (date incoerenti, identificativo duplicato, probabilità fuori range,
 stato non ammesso, tariffe sovrapposte…), con validazione anche lato UI prima
 di scrivere. Il caso più frequente era la **data di fine precedente a quella
 di inizio** nella creazione di una proposta.
+
+### 13.8 Deliverable e presentazione personale (09/2026)
+
+**Deliverable in primo piano.** Il livello `iniziativa → deliverable → task →
+subtask` esisteva a DB ma era di fatto irraggiungibile: la vista ad albero
+saltava i progetti privi di task e deliverable, quindi non c'era modo di
+creare il primo. Ora:
+
+- Nuova pagina **📦 Deliverable** (`pages/G_Deliverable.py`, blocco Attività,
+  visibile a tutti): elenco per progetto con badge del tipo, stato, chip di
+  scadenza, owner e **barra di avanzamento** calcolata sui task collegati
+  (`deliverable_repo.avanzamento_task`); filtri per progetto, tipo, stato,
+  «solo i miei» e archiviati; metriche in testa (attivi, completati, in
+  ritardo, in scadenza entro 30 giorni); creazione (admin/pm), dialog di
+  dettaglio con modifica (owner/supervisor/admin), commenti, task collegati e
+  creazione di task dentro il deliverable; eliminazione con conferma che
+  avvisa che i task collegati NON vengono eliminati (restano nel progetto).
+- **Tipi canonici** (migrazione 0016): `prototipo` · `report` · `paper` (+
+  `altro`), con vincolo a DB e normalizzazione dei valori preesistenti; prima
+  il campo era testo libero. Costanti e badge in `src/domain/models.py`
+  (`TIPI_DELIVERABLE`, `TIPO_DELIVERABLE_BADGE`).
+- **Vista ad albero (pagina Task)**: mostra ora *tutti* i progetti, marcando
+  quelli senza contenuti come «(vuoto)» con l'invito a creare il primo
+  deliverable; il tipo si sceglie da un menu invece che a testo libero.
+
+**Presentazione personale «Le mie attività»** (`build_report_personale`,
+`pack_personale`), scaricabile da **Presentazioni → 👤 Le mie attività** da
+qualunque utente, con periodo selezionabile (30–365 giorni). È l'equivalente
+del deck «My status» di MAIC tasks e serve al dipendente per presentare il
+proprio lavoro in riunione:
+
+1. **In sintesi** — task attivi, completati nel periodo, in ritardo,
+   puntualità, ore stimate, deliverable di cui è responsabile, bloccati,
+   task di altri che supervisiona;
+2. **01 Cosa ho completato** — tabella con progetto, deliverable, data di
+   chiusura ed esito (in tempo / in ritardo);
+3. **02 Su cosa sto lavorando** — una slide per progetto con i task attivi
+   (subtask indentati), stato, scadenza (rossa se scaduta) e deliverable;
+4. **03 I miei deliverable** — tipo, progetto, stato, scadenza e avanzamento
+   (task completati/totali);
+5. **04 Blocchi e prossime scadenze** — due colonne: cosa è bloccato e cosa
+   scade nei prossimi 60 giorni.

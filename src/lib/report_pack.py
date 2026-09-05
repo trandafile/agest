@@ -25,6 +25,7 @@ from src.domain.economia import (
     quote_rimanenti,
     rollup_personale,
 )
+from src.domain.models import TIPO_DELIVERABLE_BADGE
 from src.domain.portfolio import anni_portfolio, quota_per_anno, ricavi_per_anno
 from src.lib.labels import etichetta_progetto, getf
 
@@ -521,3 +522,196 @@ def _tabella_esiste(nome: str) -> bool:
         return bool(row and row["r"])
     except Exception:  # noqa: BLE001
         return False
+
+
+def pack_personale(persona, periodo_giorni: int = 90) -> dict:
+    """Dati per il deck personale «Le mie attività» (spec §13.8)."""
+    oggi = date.today()
+    da = oggi - timedelta(days=periodo_giorni)
+    iniziative = iniziativa_repo.list_iniziative()
+    titoli = {i.id: etichetta_progetto(i) for i in iniziative}
+    tasks_all = task_repo.list_tasks(include_archiviati=True)
+    delivs_all = deliverable_repo.list_deliverables(include_archiviati=True)
+    deliv_by_id = {d.id: d for d in delivs_all}
+    avanz = deliverable_repo.avanzamento_task()
+
+    miei = [
+        t
+        for t in tasks_all
+        if t.owner_id == persona.id and t.stato != "annullato" and not t.archiviato
+    ]
+    attivi = [t for t in miei if t.stato in ATTIVI]
+    in_ritardo = [t for t in attivi if t.scadenza and t.scadenza < oggi]
+    bloccati = [t for t in attivi if t.stato == "bloccato"]
+    completati = [
+        t
+        for t in miei
+        if t.stato == "completato" and t.completato_il and t.completato_il >= da
+    ]
+    con_scadenza = [
+        t for t in miei if t.stato == "completato" and t.completato_il and t.scadenza
+    ]
+    puntuali = [t for t in con_scadenza if t.completato_il <= t.scadenza]
+    supervisionati = [
+        t
+        for t in tasks_all
+        if t.supervisor_id == persona.id
+        and t.stato in ATTIVI
+        and t.owner_id != persona.id
+    ]
+
+    def _nome_deliverable(t) -> str:
+        d = deliv_by_id.get(t.deliverable_id)
+        return d.titolo if d else "—"
+
+    # task attivi raggruppati per progetto (subtask sotto il proprio padre)
+    per_progetto: dict = {}
+    for t in attivi:
+        per_progetto.setdefault(t.iniziativa_id, []).append(t)
+    progetti = []
+    for ini_id, lista in per_progetto.items():
+        radici = [t for t in lista if not t.parent_task_id]
+        figli: dict = {}
+        for t in lista:
+            if t.parent_task_id:
+                figli.setdefault(t.parent_task_id, []).append(t)
+        righe = []
+        for t in sorted(radici, key=lambda x: (x.scadenza or date.max, x.titolo)):
+            righe.append(
+                {
+                    "titolo": t.titolo,
+                    "stato": t.stato,
+                    "scadenza": t.scadenza,
+                    "deliverable": _nome_deliverable(t),
+                }
+            )
+            for f in sorted(
+                figli.get(t.id, []), key=lambda x: (x.scadenza or date.max, x.titolo)
+            ):
+                righe.append(
+                    {
+                        "titolo": f.titolo,
+                        "stato": f.stato,
+                        "scadenza": f.scadenza,
+                        "deliverable": _nome_deliverable(f),
+                        "subtask": True,
+                    }
+                )
+        # subtask il cui padre non è fra i miei task attivi
+        for t in sorted(
+            [
+                x
+                for x in lista
+                if x.parent_task_id and x.parent_task_id not in {r.id for r in radici}
+            ],
+            key=lambda x: (x.scadenza or date.max, x.titolo),
+        ):
+            righe.append(
+                {
+                    "titolo": t.titolo,
+                    "stato": t.stato,
+                    "scadenza": t.scadenza,
+                    "deliverable": _nome_deliverable(t),
+                    "subtask": True,
+                }
+            )
+        progetti.append(
+            {
+                "etichetta": titoli.get(ini_id, "Senza progetto"),
+                "task": righe,
+                "nota": f"{len(righe)} task attivi",
+            }
+        )
+    progetti.sort(key=lambda p: p["etichetta"])
+
+    # deliverable: quelli di cui sono owner/supervisor + quelli che contengono
+    # miei task attivi
+    id_dai_task = {t.deliverable_id for t in attivi if t.deliverable_id}
+    miei_deliv = [
+        d
+        for d in delivs_all
+        if not d.archiviato
+        and (persona.id in (d.owner_id, d.supervisor_id) or d.id in id_dai_task)
+    ]
+    deliverables = []
+    for d in sorted(miei_deliv, key=lambda x: (x.scadenza or date.max, x.titolo)):
+        a = avanz.get(str(d.id), {"totali": 0, "completati": 0})
+        deliverables.append(
+            {
+                "titolo": d.titolo,
+                "tipo": TIPO_DELIVERABLE_BADGE.get(d.tipo, "—"),
+                "progetto": titoli.get(d.iniziativa_id, ""),
+                "stato": d.stato,
+                "scadenza": d.scadenza,
+                "avanzamento": f"{a['completati']}/{a['totali']} task",
+            }
+        )
+
+    # prossime scadenze (task e deliverable miei, 60 giorni)
+    scadenze = []
+    for t in sorted(
+        [t for t in attivi if t.scadenza and t.scadenza <= oggi + timedelta(days=60)],
+        key=lambda x: x.scadenza,
+    ):
+        quando = (
+            "in ritardo" if t.scadenza < oggi else f"fra {(t.scadenza - oggi).days} g"
+        )
+        scadenze.append(f"{t.scadenza:%d/%m} · {t.titolo} ({quando})")
+    for d in sorted(
+        [
+            d
+            for d in miei_deliv
+            if d.scadenza
+            and d.stato in ATTIVI
+            and d.scadenza <= oggi + timedelta(days=60)
+        ],
+        key=lambda x: x.scadenza,
+    ):
+        scadenze.append(f"{d.scadenza:%d/%m} · 📦 {d.titolo}")
+
+    return {
+        "titolo": f"Le mie attività — {persona.nome_completo}",
+        "sottotitolo": (
+            f"Stato dei miei task e deliverable · ultimi {periodo_giorni} giorni"
+        ),
+        "meta": _meta(persona),
+        "oggi": oggi,
+        "periodo_giorni": periodo_giorni,
+        "sintesi": {
+            "attivi": len(attivi),
+            "completati_periodo": len(completati),
+            "in_ritardo": len(in_ritardo),
+            "bloccati": len(bloccati),
+            "supervisionati": len(supervisionati),
+            "deliverable": len(miei_deliv),
+            "ore_stimate": float(sum(t.ore_stimate or 0 for t in attivi)),
+            "puntualita": (
+                f"{len(puntuali) / len(con_scadenza) * 100:.0f}%"
+                if con_scadenza
+                else "—"
+            ),
+        },
+        "completati": [
+            {
+                "titolo": t.titolo,
+                "progetto": titoli.get(t.iniziativa_id, ""),
+                "deliverable": _nome_deliverable(t),
+                "completato_il": t.completato_il,
+                "in_tempo": ((t.completato_il <= t.scadenza) if t.scadenza else None),
+            }
+            for t in sorted(completati, key=lambda x: x.completato_il, reverse=True)
+        ],
+        "nota_completati": (
+            f"{len(completati)} task chiusi negli ultimi {periodo_giorni} giorni."
+            if completati
+            else "Nessun task completato nel periodo."
+        ),
+        "progetti": progetti,
+        "deliverables": deliverables,
+        "bloccati": [
+            f"{t.titolo} — {titoli.get(t.iniziativa_id, 'senza progetto')}"
+            + (f" (scad. {t.scadenza:%d/%m/%Y})" if t.scadenza else "")
+            for t in bloccati
+        ][:10],
+        "scadenze": scadenze[:10],
+    }

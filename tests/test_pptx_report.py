@@ -16,6 +16,7 @@ from src.lib.pptx_report import (  # noqa: E402
     Deck,
     build_report_attivita,
     build_report_finanziario,
+    build_report_personale,
     build_report_progetto,
 )
 
@@ -372,3 +373,129 @@ def test_report_progetto_senza_economia_non_mostra_importi():
     assert (
         "Budget (baseline)" in testo2 and "Calendario dei movimenti previsti" in testo2
     )
+
+
+def _pack_personale() -> dict:
+    return {
+        "titolo": "Le mie attività — Luigi Boccia",
+        "sottotitolo": "Stato dei miei task e deliverable",
+        "meta": "ANTECNICA · 05/09/2026",
+        "oggi": OGGI,
+        "periodo_giorni": 90,
+        "sintesi": {
+            "attivi": 4,
+            "completati_periodo": 3,
+            "in_ritardo": 1,
+            "bloccati": 1,
+            "supervisionati": 2,
+            "deliverable": 2,
+            "ore_stimate": 36.0,
+            "puntualita": "75%",
+        },
+        "completati": [
+            {
+                "titolo": "Simulazioni EM",
+                "progetto": "CASCADE",
+                "deliverable": "D2.1 Report",
+                "completato_il": date(2026, 8, 20),
+                "in_tempo": True,
+            },
+            {
+                "titolo": "Layout v2",
+                "progetto": "IOT",
+                "deliverable": "—",
+                "completato_il": date(2026, 7, 3),
+                "in_tempo": False,
+            },
+        ],
+        "nota_completati": "3 task chiusi negli ultimi 90 giorni.",
+        "progetti": [
+            {
+                "etichetta": "CASCADE · Cascaded array",
+                "nota": "2 task attivi",
+                "task": [
+                    {
+                        "titolo": "Misure in camera anecoica",
+                        "stato": "in_corso",
+                        "scadenza": date(2026, 10, 15),
+                        "deliverable": "D2.1 Report",
+                    },
+                    {
+                        "titolo": "Preparare setup",
+                        "stato": "da_fare",
+                        "scadenza": date(2026, 8, 1),
+                        "deliverable": "D2.1 Report",
+                        "subtask": True,
+                    },
+                ],
+            }
+        ],
+        "deliverables": [
+            {
+                "titolo": "D2.1 Report",
+                "tipo": "📄 Report",
+                "progetto": "CASCADE",
+                "stato": "in_corso",
+                "scadenza": date(2026, 11, 30),
+                "avanzamento": "3/7 task",
+            },
+            {
+                "titolo": "Prototipo array 2x2",
+                "tipo": "🔧 Prototipo",
+                "progetto": "IOT",
+                "stato": "da_fare",
+                "scadenza": date(2026, 7, 1),
+                "avanzamento": "0/4 task",
+            },
+        ],
+        "bloccati": ["Ordine componenti — CASCADE (scad. 30/09/2026)"],
+        "scadenze": ["15/10 · Misure in camera anecoica (fra 40 g)"],
+    }
+
+
+def test_report_personale_struttura():
+    prs = Presentation(BytesIO(build_report_personale(_pack_personale())))
+    testo = _testi(prs)
+    for atteso in (
+        "Le mie attività — Luigi Boccia",
+        "In sintesi",
+        "Cosa ho completato",
+        "Su cosa sto lavorando",
+        "I miei deliverable",
+        "Blocchi e prossime scadenze",
+        "Simulazioni EM",
+        "Misure in camera anecoica",
+        "Prototipo array 2x2",
+        "3/7 task",
+        "Ordine componenti",
+    ):
+        assert atteso in testo, atteso
+    layouts = [s.slide_layout.name for s in prs.slides]
+    assert layouts[0] == "TITLE" and layouts[-1] == "CLOSING"
+    assert layouts.count("SECTION") == 4
+    assert "TWO_COLUMNS" in layouts  # blocchi / scadenze
+    assert "Click to add" not in testo
+
+
+def test_report_personale_pack_vuoto():
+    """Persona senza task: il deck si genera comunque, senza slide rotte."""
+    prs = Presentation(
+        BytesIO(
+            build_report_personale(
+                {
+                    "titolo": "Le mie attività — Anna Verdi",
+                    "oggi": OGGI,
+                    "sintesi": {},
+                    "completati": [],
+                    "progetti": [],
+                    "deliverables": [],
+                    "bloccati": [],
+                    "scadenze": [],
+                }
+            )
+        )
+    )
+    testo = _testi(prs)
+    assert "Nessun task attivo assegnato." in testo
+    assert "Nessun task bloccato." in testo
+    assert "Click to add" not in testo

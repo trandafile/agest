@@ -22,7 +22,8 @@ Guida per l'agente di coding: [`agents.md`](agents.md). Fasi: [`prompts.md`](pro
 | v3 (09/2026) | **Due livelli di visibilità** (dipendente/amministratore), **Portfolio pluriennale** (GANTT progetti+proposte, carico per persona/anno, ricavi attesi), **Sostenibilità economica** (KPI del Piano strategico §6 con soglie, proiezione di cassa a 3 scenari fino a 36 mesi, backlog, stima utile e tasse), **Task v3** (kanban, «La mia settimana», ore stimate/effettive, storico stati, briefing e-mail), **Presentazioni .pptx** sul template ANTECNICA (attività, progetto, finanziario) | ✅ codice · ⏳ migrazione 0015 da applicare |
 
 Dettagli v2 in `project-specifications.md` §11, v3 in §13 (§13.7: modifica ed
-eliminazione dei progetti dall'elenco, messaggi d'errore leggibili).
+eliminazione dei progetti dall'elenco, messaggi d'errore leggibili; §13.8:
+pagina Deliverable e presentazione personale «Le mie attività»).
 
 > **Dopo l'aggiornamento v3**: applicare la migrazione con
 > `python scripts/apply_schema.py` (crea `piano_ore_anno`, `parametri_finanziari`,
@@ -139,6 +140,7 @@ pages/
   6_Progetti.py            # baseline vs consuntivo, quote, milestone
   7_Finanza.py             # import, riconciliazione, dashboard, export, audit
   8_Task.py                # albero / elenco / kanban / la mia settimana
+  G_Deliverable.py         # v3: prototipi, report e paper con avanzamento
   9_ImportBanca.py         # estratti conto CAMT/CSV/PDF
   A_Calendario.py, B_Report.py, C_Missioni.py
   D_Portfolio.py           # v3: GANTT pluriennale, carico per anno, ricavi attesi

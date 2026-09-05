@@ -65,6 +65,7 @@ MATRICE_VISIBILITA: dict[str, tuple[Livello, ...]] = {
     "Presenze": (Livello.amministratore, Livello.dipendente),
     "Ferie / Permessi": (Livello.amministratore, Livello.dipendente),
     "Task": (Livello.amministratore, Livello.dipendente),
+    "Deliverable": (Livello.amministratore, Livello.dipendente),
     "Calendario": (Livello.amministratore, Livello.dipendente),
     "Missioni": (Livello.amministratore, Livello.dipendente),
     "Portfolio (senza importi)": (Livello.amministratore, Livello.dipendente),

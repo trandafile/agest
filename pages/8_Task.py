@@ -17,7 +17,12 @@ from src.data import (
     persona_repo,
     task_repo,
 )
-from src.domain.models import STATO_TASK_BADGE, RuoloSistema
+from src.domain.models import (
+    STATO_TASK_BADGE,
+    TIPI_DELIVERABLE,
+    TIPO_DELIVERABLE_BADGE,
+    RuoloSistema,
+)
 from src.lib.labels import etichetta_con_tag, etichetta_progetto
 from src.ui.task_ui import (
     KANBAN_STATI,
@@ -146,15 +151,28 @@ if vista.startswith("🌳"):
         delivs = deliverable_repo.list_deliverables(
             ini.id, include_archiviati=mostra_archiviati
         )
-        if not ini_tasks and not delivs:
-            continue
-        with st.expander(f"📁 {titoli_ini[ini.id]}", expanded=bool(filtro_ini)):
+        # I progetti senza contenuti restano visibili: è da qui che si creano
+        # il primo deliverable e i primi task.
+        vuoto = not ini_tasks and not delivs
+        etichetta_exp = f"📁 {titoli_ini[ini.id]}" + (" · (vuoto)" if vuoto else "")
+        with st.expander(etichetta_exp, expanded=bool(filtro_ini)):
+            if vuoto:
+                st.caption(
+                    "Nessun deliverable né task: comincia creando un "
+                    "deliverable (prototipo, report o paper) e poi i task che "
+                    "servono a produrlo."
+                )
             if puo_gestire_deliv:
                 with st.expander("➕ Nuovo deliverable"):
                     with st.form(f"nd_{ini.id}", clear_on_submit=True):
                         dc1, dc2, dc3 = st.columns([3, 1, 1])
                         d_tit = dc1.text_input("Titolo deliverable")
-                        d_tipo = dc2.text_input("Tipo", placeholder="report/paper")
+                        d_tipo = dc2.selectbox(
+                            "Tipo",
+                            TIPI_DELIVERABLE,
+                            format_func=lambda t: TIPO_DELIVERABLE_BADGE[t],
+                            key=f"dtipo_{ini.id}",
+                        )
                         d_scad = dc3.date_input("Scadenza", value=None)
                         d_own = st.selectbox(
                             "Owner",
@@ -191,7 +209,11 @@ if vista.startswith("🌳"):
                 st.markdown(
                     f"### 📦 {d.titolo}  \n"
                     f"<small>{icona}"
-                    + (f" · {d.tipo}" if d.tipo else "")
+                    + (
+                        f" · {TIPO_DELIVERABLE_BADGE.get(d.tipo, d.tipo)}"
+                        if d.tipo
+                        else ""
+                    )
                     + scad
                     + (f" · 👤 {own}" if own else "")
                     + "</small>",

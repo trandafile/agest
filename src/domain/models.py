@@ -207,6 +207,15 @@ STATO_TASK_BADGE = {
     "completato": "🟢 Completato",
     "annullato": "⚫ Annullato",
 }
+TIPI_DELIVERABLE = ("prototipo", "report", "paper", "altro")
+
+TIPO_DELIVERABLE_BADGE = {
+    "prototipo": "🔧 Prototipo",
+    "report": "📄 Report",
+    "paper": "📝 Paper",
+    "altro": "📦 Altro",
+}
+
 PRIORITA_BADGE = {
     "urgente": "🔴 Urgente",
     "alta": "🟠 Alta",

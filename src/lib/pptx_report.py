@@ -1257,3 +1257,143 @@ def build_report_progetto(pack: dict) -> bytes:
         )
     d.chiusura(pack.get("chiusura", "Grazie"))
     return d.bytes()
+
+
+def build_report_personale(pack: dict) -> bytes:
+    """Deck «Le mie attività»: struttura pensata perché una persona presenti
+    il proprio lavoro (equivalente del «My status» di MAIC tasks).
+
+    Sequenza: sintesi → cosa ho completato → su cosa sto lavorando (per
+    progetto) → i miei deliverable → cosa mi blocca e cosa scade.
+    """
+    oggi = pack.get("oggi") or date.today()
+    giorni = pack.get("periodo_giorni", 90)
+    d = Deck()
+    d.titolo(
+        pack.get("titolo", "Le mie attività"),
+        pack.get("sottotitolo", ""),
+        pack.get("meta", ""),
+    )
+    s = pack.get("sintesi", {})
+    d.kpi(
+        "In sintesi",
+        [
+            (str(s.get("attivi", 0)), "Task attivi", "assegnati a me"),
+            (
+                str(s.get("completati_periodo", 0)),
+                "Completati",
+                f"ultimi {giorni} giorni",
+                VERDE,
+            ),
+            (
+                str(s.get("in_ritardo", 0)),
+                "In ritardo",
+                "oltre la scadenza",
+                ROSSO if s.get("in_ritardo") else VERDE,
+            ),
+            (s.get("puntualita") or "—", "Puntualità", "completati entro la scadenza"),
+            (f"{s.get('ore_stimate', 0):g} h", "Ore stimate", "sui task attivi"),
+            (str(s.get("deliverable", 0)), "Deliverable", "di cui sono responsabile"),
+            (
+                str(s.get("bloccati", 0)),
+                "Bloccati",
+                "in attesa di qualcosa",
+                AMBRA if s.get("bloccati") else GRIGIO,
+            ),
+            (str(s.get("supervisionati", 0)), "Supervisionati", "task di altri"),
+        ],
+    )
+
+    d.sezione(1, "Cosa ho completato", f"Ultimi {giorni} giorni")
+    d.tabella(
+        "Task completati",
+        ["Task", "Progetto", "Deliverable", "Chiuso il", "Esito"],
+        [
+            [
+                t["titolo"],
+                t.get("progetto", ""),
+                t.get("deliverable", "—"),
+                _fmt_data(t.get("completato_il")),
+                (
+                    ("in tempo", VERDE)
+                    if t.get("in_tempo") is True
+                    else (("in ritardo", ROSSO) if t.get("in_tempo") is False else "—")
+                ),
+            ]
+            for t in pack.get("completati", [])
+        ],
+        larghezze=[5.0, 2.2, 2.4, 1.3, 1.3],
+        nota=pack.get("nota_completati", ""),
+    )
+
+    d.sezione(2, "Su cosa sto lavorando", "Task attivi, per progetto")
+    progetti = pack.get("progetti", [])
+    if not progetti:
+        d.contenuto("Task attivi", ["Nessun task attivo assegnato."])
+    for prog in progetti:
+        d.tabella(
+            prog["etichetta"],
+            ["Task", "Stato", "Scadenza", "Deliverable"],
+            [
+                [
+                    ("   ↳ " if t.get("subtask") else "") + t["titolo"],
+                    (
+                        STATO_TXT.get(t.get("stato"), t.get("stato", "")),
+                        COLORE_STATO.get(t.get("stato"), ANTRACITE),
+                    ),
+                    (
+                        _fmt_data(t.get("scadenza")),
+                        (
+                            ROSSO
+                            if isinstance(t.get("scadenza"), date)
+                            and t["scadenza"] < oggi
+                            else ANTRACITE
+                        ),
+                    ),
+                    t.get("deliverable", "—"),
+                ]
+                for t in prog.get("task", [])
+            ],
+            larghezze=[5.6, 1.7, 1.7, 3.2],
+            nota=prog.get("nota", ""),
+        )
+
+    d.sezione(3, "I miei deliverable", "Prototipi, report e paper che devo produrre")
+    d.tabella(
+        "Deliverable di cui sono responsabile",
+        ["Deliverable", "Tipo", "Progetto", "Stato", "Scadenza", "Avanzamento"],
+        [
+            [
+                x["titolo"],
+                x.get("tipo", "—"),
+                x.get("progetto", ""),
+                (
+                    STATO_TXT.get(x.get("stato"), x.get("stato", "")),
+                    COLORE_STATO.get(x.get("stato"), ANTRACITE),
+                ),
+                (
+                    _fmt_data(x.get("scadenza")),
+                    (
+                        ROSSO
+                        if isinstance(x.get("scadenza"), date) and x["scadenza"] < oggi
+                        else ANTRACITE
+                    ),
+                ),
+                x.get("avanzamento", "—"),
+            ]
+            for x in pack.get("deliverables", [])
+        ],
+        larghezze=[3.8, 1.3, 2.2, 1.5, 1.4, 2.0],
+    )
+
+    d.sezione(4, "Blocchi e prossime scadenze", "Dove serve una decisione")
+    d.due_colonne(
+        "Cosa mi blocca · cosa scade",
+        ("Da sbloccare", pack.get("bloccati", []) or ["Nessun task bloccato."]),
+        (
+            "Prossime scadenze",
+            pack.get("scadenze", []) or ["Nessuna scadenza nei prossimi 60 giorni."],
+        ),
+    )
+    d.chiusura(pack.get("chiusura", "Grazie"))
+    return d.bytes()
