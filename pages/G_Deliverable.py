@@ -327,8 +327,18 @@ for ini_id, lista in per_progetto.items():
                     [x for x in d_tasks if not x.parent_task_id],
                     key=lambda x: (x.scadenza or date(9999, 12, 31), x.titolo),
                 ):
+                    _figli = [x for x in d_tasks if x.parent_task_id == t.id]
                     riga_task(
-                        t, nomi, titoli_ini, persona, is_admin, key_prefix=f"dl{d.id}"
+                        t,
+                        nomi,
+                        titoli_ini,
+                        persona,
+                        is_admin,
+                        key_prefix=f"dl{d.id}",
+                        subtask=(
+                            sum(1 for x in _figli if x.stato == "completato"),
+                            len(_figli),
+                        ),
                     )
                     for s in sorted(
                         [x for x in d_tasks if x.parent_task_id == t.id],

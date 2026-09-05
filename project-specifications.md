@@ -460,3 +460,27 @@ proprio lavoro in riunione:
    (task completati/totali);
 5. **04 Blocchi e prossime scadenze** — due colonne: cosa è bloccato e cosa
    scade nei prossimi 60 giorni.
+
+### 13.9 Subtask (09/2026)
+
+I subtask esistevano già nel modello (`task.parent_task_id`, cascata
+sull'eliminazione del padre) ed erano mostrati ovunque, ma si potevano
+**creare in un solo punto** (la vista «Elenco» della pagina Task). Ora:
+
+- **Creazione da qualsiasi vista**: il dialog «Dettagli» di un task contiene
+  il blocco **Subtask** (`task_ui.blocco_subtask`) con l'elenco dei figli
+  (stato, scadenza, owner), il conteggio dei completati e il form di
+  creazione. Il dialog si apre da albero, elenco, kanban, «La mia settimana»
+  e dalla pagina Deliverable, quindi i subtask si creano da ogni schermata.
+  Il nuovo subtask eredita progetto, deliverable, supervisor e priorità del
+  padre; l'owner è preselezionato su quello del padre ma modificabile.
+- **Gerarchia a due livelli**: aprendo un subtask il blocco spiega che la
+  gerarchia si ferma lì (niente subtask di subtask), coerentemente con come
+  albero, report Markdown/XLSX e presentazioni rendono l'indentazione.
+- **Conteggio «↳ 2/3 subtask»** nella riga del task in albero, elenco,
+  kanban, «La mia settimana» e pagina Deliverable. È calcolato su tutti i
+  task non archiviati, non sulla lista filtrata: cambiando i filtri di stato
+  il conteggio resta quello reale (mentre le righe dei subtask completati
+  restano nascoste, come per i task normali).
+- Nei report i subtask sono già inclusi: indentati sotto il padre nel report
+  attività e nel SAL di progetto, e marcati come riga «↳» nel deck personale.

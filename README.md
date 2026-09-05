@@ -140,6 +140,7 @@ pages/
   6_Progetti.py            # baseline vs consuntivo, quote, milestone
   7_Finanza.py             # import, riconciliazione, dashboard, export, audit
   8_Task.py                # albero / elenco / kanban / la mia settimana
+                           # (subtask creabili dal dialog in ogni vista)
   G_Deliverable.py         # v3: prototipi, report e paper con avanzamento
   9_ImportBanca.py         # estratti conto CAMT/CSV/PDF
   A_Calendario.py, B_Report.py, C_Missioni.py

@@ -6,7 +6,7 @@ from datetime import date
 
 import streamlit as st
 
-from src.data import task_repo
+from src.data import persona_repo, task_repo
 from src.domain.models import (
     PRIORITA_BADGE,
     PRIORITA_TASK,
@@ -49,10 +49,12 @@ def riga_task(
     key_prefix: str,
     indent: bool = False,
     etichette_map: dict | None = None,
+    subtask: tuple[int, int] | None = None,
 ) -> None:
     """Riga compatta di un task con bottone Dettagli.
 
     `etichette_map` opzionale: {task_id: [{nome, colore}]} per i chip etichetta.
+    `subtask` opzionale: (completati, totali) da mostrare come «↳ 1/3».
     """
     c1, c2 = st.columns([8.5, 1.5])
     prefisso = "&nbsp;&nbsp;&nbsp;↳ " if indent else ""
@@ -77,6 +79,7 @@ def riga_task(
             else ""
         )
         + (f" &nbsp;{chips}" if chips else "")
+        + (f" · ↳ {subtask[0]}/{subtask[1]} subtask" if subtask and subtask[1] else "")
         + "</small>",
         unsafe_allow_html=True,
     )
@@ -110,6 +113,7 @@ def task_dialog(
         st.info(
             "Sola lettura: puoi modificare solo i task di cui sei owner/supervisor."
         )
+        blocco_subtask(task, nomi, persona, is_admin, can_edit=False)
         st.divider()
         blocco_commenti("task", task.id, persona, is_admin, nomi)
         return
@@ -211,6 +215,7 @@ def task_dialog(
         task_repo.update_task(task.id, eseguito_da=persona.email, archiviato=True)
         st.rerun()
 
+    blocco_subtask(task, nomi, persona, is_admin, can_edit=True)
     _storico_stati(task)
     st.divider()
     blocco_commenti("task", task.id, persona, is_admin, nomi)
@@ -233,6 +238,85 @@ def _storico_stati(task: Task) -> None:
             nuovo = STATO_TASK_BADGE.get(r["stato_nuovo"], r["stato_nuovo"])
             chi = f" · {r['cambiato_da']}" if r.get("cambiato_da") else ""
             st.caption(f"{r['cambiato_il']:%d/%m/%Y %H:%M} — {prec} → {nuovo}{chi}")
+
+
+def blocco_subtask(
+    task: Task,
+    nomi: dict,
+    persona: Persona,
+    is_admin: bool,
+    can_edit: bool,
+) -> None:
+    """Subtask del task: elenco con stato e scadenza + creazione.
+
+    Sta nel dialog dei dettagli, quindi è raggiungibile da OGNI vista
+    (albero, elenco, kanban, la mia settimana, pagina Deliverable).
+    La gerarchia è volutamente a due livelli: un subtask non ha figli.
+    """
+    st.divider()
+    if task.parent_task_id:
+        st.caption(
+            "Questo è un subtask: la gerarchia si ferma a due livelli "
+            "(task → subtask)."
+        )
+        return
+
+    figli = [
+        t
+        for t in task_repo.list_tasks(include_archiviati=False)
+        if t.parent_task_id == task.id
+    ]
+    fatti = sum(1 for t in figli if t.stato == "completato")
+    st.markdown(f"**Subtask** ({fatti}/{len(figli)} completati)")
+    if figli:
+        for s_ in sorted(figli, key=lambda x: (x.scadenza or date.max, x.titolo)):
+            st.markdown(
+                f"- {STATO_TASK_BADGE.get(s_.stato, s_.stato)} **{s_.titolo}** · "
+                f"{scadenza_chip(s_.scadenza)} · 👤 {nomi.get(s_.owner_id, '—')}"
+            )
+    else:
+        st.caption("Nessun subtask: spezza il task in passi più piccoli se serve.")
+
+    if not can_edit:
+        return
+    with st.expander("➕ Aggiungi subtask"):
+        with st.form(f"nuovo_sub_{task.id}", clear_on_submit=True):
+            titolo = st.text_input("Titolo del subtask *")
+            c1, c2, c3 = st.columns(3)
+            persone = persona_repo.list_persone(solo_attivi=True)
+            idx_own = next(
+                (i for i, p in enumerate(persone) if p.id == task.owner_id), None
+            )
+            owner = c1.selectbox(
+                "Owner",
+                persone,
+                index=idx_own if idx_own is not None else 0,
+                format_func=lambda p: p.nome_completo,
+                key=f"sub_own_{task.id}",
+            )
+            scad = c2.date_input(
+                "Scadenza (opz.)", value=None, key=f"sub_scad_{task.id}"
+            )
+            ore = c3.number_input(
+                "Ore stimate (opz.)", min_value=0.0, step=0.5, key=f"sub_ore_{task.id}"
+            )
+            if st.form_submit_button("Crea subtask", type="primary"):
+                if not titolo:
+                    st.error("Il titolo è obbligatorio.")
+                else:
+                    task_repo.create_task(
+                        titolo=titolo,
+                        owner_id=owner.id if owner else None,
+                        supervisor_id=task.supervisor_id,
+                        iniziativa_id=task.iniziativa_id,
+                        deliverable_id=task.deliverable_id,
+                        parent_task_id=task.id,
+                        scadenza=scad,
+                        ore_stimate=ore or None,
+                        priorita=task.priorita,
+                        eseguito_da=persona.email,
+                    )
+                    st.rerun()
 
 
 def form_nuovo_task(
@@ -323,6 +407,7 @@ def riga_settimana(
     persona: Persona,
     giorni_fermo: int | None,
     key_prefix: str = "wk",
+    subtask: tuple[int, int] | None = None,
 ) -> None:
     """«La mia settimana» (My Week di MAIC tasks): stato modificabile IN LINEA
     e nota di avanzamento, senza aprire il dialog."""
@@ -330,10 +415,11 @@ def riga_settimana(
     fermo = (
         f" · ⏸ fermo da {giorni_fermo}g" if giorni_fermo and giorni_fermo >= 14 else ""
     )
+    conta = f" · ↳ {subtask[0]}/{subtask[1]} subtask" if subtask and subtask[1] else ""
     c1.markdown(
         f"**{task.titolo}** · {PRIORITA_BADGE.get(task.priorita, '')} · "
         f"{scadenza_chip(task.scadenza)}  \n<small>📁 "
-        f"{titoli_iniziative.get(task.iniziativa_id, '—')}{fermo}</small>",
+        f"{titoli_iniziative.get(task.iniziativa_id, '—')}{fermo}{conta}</small>",
         unsafe_allow_html=True,
     )
     stati = [s for s in STATI_TASK if s != "annullato"]
@@ -377,15 +463,19 @@ def card_kanban(
     persona: Persona,
     is_admin: bool,
     key_prefix: str = "kb",
+    subtask: tuple[int, int] | None = None,
 ) -> None:
     """Card compatta per la vista kanban con spostamento fra colonne."""
     with st.container(border=True):
         sub_ = "↳ " if task.parent_task_id else ""
+        conta = (
+            f" · ↳ {subtask[0]}/{subtask[1]} subtask" if subtask and subtask[1] else ""
+        )
         st.markdown(
             f"{sub_}**{task.titolo}**  \n<small>"
             f"{PRIORITA_BADGE.get(task.priorita, '')} · "
             f"{scadenza_chip(task.scadenza)}  \n👤 {nomi.get(task.owner_id, '—')} · 📁 "
-            f"{titoli_iniziative.get(task.iniziativa_id, '—')}</small>",
+            f"{titoli_iniziative.get(task.iniziativa_id, '—')}{conta}</small>",
             unsafe_allow_html=True,
         )
         if task_repo.puo_modificare(task, persona.id, is_admin):

@@ -97,6 +97,24 @@ mostra_archiviati = f4.checkbox("Mostra archiviati", value=False)
 
 tasks_all = task_repo.list_tasks(include_archiviati=True)
 by_id = {t.id: t for t in tasks_all}
+
+# Conteggio dei subtask per task padre: calcolato su TUTTI i task non
+# archiviati, così non dipende dai filtri di stato applicati alla vista.
+_conta_sub: dict = {}
+for _t in tasks_all:
+    if _t.parent_task_id and not _t.archiviato:
+        _c = _conta_sub.setdefault(_t.parent_task_id, [0, 0])
+        _c[1] += 1
+        if _t.stato == "completato":
+            _c[0] += 1
+
+
+def _sub(t) -> tuple[int, int] | None:
+    """(subtask completati, totali) del task, o None se non ne ha."""
+    c = _conta_sub.get(t.id)
+    return (c[0], c[1]) if c else None
+
+
 tasks = task_repo.list_tasks(include_archiviati=mostra_archiviati)
 if filtro_stato:
     tasks = [t for t in tasks if t.stato in filtro_stato]
@@ -112,6 +130,7 @@ _et_map = etichetta_repo.etichette_by_task()
 
 
 def _render_task_con_figli(t, prefix, indent=False):
+    figli = [s for s in tasks if s.parent_task_id == t.id]
     riga_task(
         t,
         nomi,
@@ -121,8 +140,8 @@ def _render_task_con_figli(t, prefix, indent=False):
         key_prefix=prefix,
         indent=indent,
         etichette_map=_et_map,
+        subtask=_sub(t),
     )
-    figli = [s for s in tasks if s.parent_task_id == t.id]
     for s in sorted(figli, key=_key):
         riga_task(
             s,
@@ -266,7 +285,7 @@ elif vista.startswith("📌"):
         with col:
             st.markdown(f"**{STATO_BADGE_D[stato]}** · {len(in_col)}")
             for t in sorted(in_col, key=_key):
-                card_kanban(t, nomi, titoli_ini, persona, is_admin)
+                card_kanban(t, nomi, titoli_ini, persona, is_admin, subtask=_sub(t))
     st.caption(
         "I task completati compaiono solo se lo stato «completato» è fra i filtri."
     )
@@ -316,7 +335,7 @@ elif vista.startswith("🗓"):
     if not miei:
         st.info("Nessun task attivo con questi criteri.")
     for t in sorted(miei, key=_ordine):
-        riga_settimana(t, nomi, titoli_ini, persona, fermo.get(t.id))
+        riga_settimana(t, nomi, titoli_ini, persona, fermo.get(t.id), subtask=_sub(t))
 
 # =====================================================================
 # VISTA ELENCO (piatta)
@@ -355,7 +374,10 @@ else:
         st.stop()
     radici = [t for t in tasks if not t.parent_task_id]
     subtasks = [t for t in tasks if t.parent_task_id]
-    st.caption(f"{len(tasks)} task ({len(radici)} principali, {len(subtasks)} subtask)")
+    st.caption(
+        f"{len(tasks)} task ({len(radici)} principali, {len(subtasks)} subtask). "
+        "I subtask si aggiungono anche da «Dettagli» di un task, in qualsiasi vista."
+    )
     for t in sorted(radici, key=_key):
         _render_task_con_figli(t, "lst")
         if task_repo.puo_modificare(t, persona.id, is_admin):
