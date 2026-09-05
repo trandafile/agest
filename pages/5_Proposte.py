@@ -20,6 +20,7 @@ from src.domain.economia import (
     valore_atteso,
 )
 from src.domain.models import CATEGORIE_BUDGET, RuoloSistema
+from src.lib.errori import messaggio_errore_db
 from src.lib.labels import etichetta_progetto, getf
 
 persona = require_role(RuoloSistema.admin)
@@ -59,6 +60,11 @@ if proposte:
         ]
     )
     st.dataframe(pipe, hide_index=True, use_container_width=True)
+    if is_admin:
+        st.caption(
+            "Per **modificare** o **eliminare** una proposta apri qui sotto "
+            "«✏️ Modifica / 🗑 elimina proposta» e scegli la proposta dal menu."
+        )
     vive = [p for p in proposte if p.stato in ("bozza", "inviata")]
     tot_budget = sum(float(p.budget_totale or 0) for p in vive)
     tot_atteso = sum(
@@ -102,27 +108,36 @@ if is_admin:
             if st.form_submit_button("Crea proposta", type="primary"):
                 if not titolo:
                     st.error("Il titolo è obbligatorio.")
-                else:
-                    iniziativa_repo.create_iniziativa(
-                        tipo="proposta",
-                        stato="bozza",
-                        titolo=titolo,
-                        acronimo=acronimo or None,
-                        codice=codice or None,
-                        controparte=controparte or None,
-                        data_inizio=inizio,
-                        data_fine=fine,
-                        budget_totale=budget or None,
-                        probabilita_successo=prob / 100,
-                        tipo_ricavo=tipo_ric,
-                        responsabile_id=resp.id if resp else None,
+                elif inizio and fine and fine < inizio:
+                    st.error(
+                        "La data di fine prevista non può precedere quella di "
+                        "inizio."
                     )
-                    st.success("Proposta creata.")
-                    st.rerun()
+                else:
+                    try:
+                        iniziativa_repo.create_iniziativa(
+                            tipo="proposta",
+                            stato="bozza",
+                            titolo=titolo,
+                            acronimo=acronimo or None,
+                            codice=codice or None,
+                            controparte=controparte or None,
+                            data_inizio=inizio,
+                            data_fine=fine,
+                            budget_totale=budget or None,
+                            probabilita_successo=prob / 100,
+                            tipo_ricavo=tipo_ric,
+                            responsabile_id=resp.id if resp else None,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(messaggio_errore_db(exc))
+                    else:
+                        st.success("Proposta creata.")
+                        st.rerun()
 
     # --- Modifica proposta selezionata -------------------------------------
     if proposte:
-        with st.expander("✏️ Modifica proposta"):
+        with st.expander("✏️ Modifica / 🗑 elimina proposta"):
             ep = st.selectbox(
                 "Proposta da modificare",
                 proposte,
@@ -176,21 +191,28 @@ if is_admin:
                     format_func=lambda p: "—" if p is None else p.nome_completo,
                 )
                 if st.form_submit_button("Salva modifiche", type="primary"):
-                    iniziativa_repo.update_iniziativa(
-                        ep.id,
-                        titolo=e_tit,
-                        acronimo=e_acr or None,
-                        codice=e_cod or None,
-                        controparte=e_ente or None,
-                        data_inizio=e_ini,
-                        data_fine=e_fine,
-                        budget_totale=e_budget or None,
-                        probabilita_successo=e_prob / 100,
-                        tipo_ricavo=e_ric,
-                        responsabile_id=e_resp.id if e_resp else None,
-                    )
-                    st.success("Proposta aggiornata.")
-                    st.rerun()
+                    if e_ini and e_fine and e_fine < e_ini:
+                        st.error("La data di fine non può precedere quella di inizio.")
+                    else:
+                        try:
+                            iniziativa_repo.update_iniziativa(
+                                ep.id,
+                                titolo=e_tit,
+                                acronimo=e_acr or None,
+                                codice=e_cod or None,
+                                controparte=e_ente or None,
+                                data_inizio=e_ini,
+                                data_fine=e_fine,
+                                budget_totale=e_budget or None,
+                                probabilita_successo=e_prob / 100,
+                                tipo_ricavo=e_ric,
+                                responsabile_id=e_resp.id if e_resp else None,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(messaggio_errore_db(exc))
+                        else:
+                            st.success("Proposta aggiornata.")
+                            st.rerun()
 
             st.divider()
             st.markdown("**Elimina proposta**")

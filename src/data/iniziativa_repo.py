@@ -124,6 +124,46 @@ def update_iniziativa(iniziativa_id: UUID | str, **campi) -> Iniziativa:
     return _to_iniziativa(row)
 
 
+def riepilogo_dipendenze(iniziativa_id: UUID | str) -> dict:
+    """Dati collegati all'iniziativa (per l'eliminazione consapevole).
+
+    Distingue cio' che viene ELIMINATO in cascata (assegnazioni e quindi ore a
+    timesheet, task, deliverable, milestone, WP, budget, movimenti previsti)
+    da cio' che resta ma viene SCOLLEGATO (movimenti bancari, documenti,
+    spese, missioni, file in archivio).
+    """
+    return db.query_one(
+        """
+        select
+          (select count(*) from assegnazione
+             where iniziativa_id = %(id)s) as assegnazioni,
+          (select coalesce(sum(t.ore), 0) from timesheet_ora t
+             join assegnazione a on a.id = t.assegnazione_id
+            where a.iniziativa_id = %(id)s) as ore_timesheet,
+          (select count(*) from task where iniziativa_id = %(id)s) as task,
+          (select count(*) from deliverable
+             where iniziativa_id = %(id)s) as deliverable,
+          (select count(*) from milestone
+             where iniziativa_id = %(id)s) as milestone,
+          (select count(*) from work_package
+             where iniziativa_id = %(id)s) as work_package,
+          (select count(*) from voce_budget
+             where iniziativa_id = %(id)s) as voci_budget,
+          (select count(*) from movimento_previsto
+             where iniziativa_id = %(id)s) as movimenti_previsti,
+          (select count(*) from movimento_bancario
+             where iniziativa_id = %(id)s) as movimenti_bancari,
+          (select count(*) from documento_fiscale
+             where iniziativa_id = %(id)s) as documenti,
+          (select count(*) from spesa where iniziativa_id = %(id)s) as spese,
+          (select count(*) from missione where iniziativa_id = %(id)s) as missioni,
+          (select count(*) from archivio_file
+             where iniziativa_id = %(id)s) as file_archivio
+        """,
+        {"id": str(iniziativa_id)},
+    )
+
+
 def delete_iniziativa(iniziativa_id: UUID | str) -> None:
     from src.data import commento_repo
 

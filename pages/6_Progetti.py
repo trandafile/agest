@@ -35,6 +35,7 @@ from src.domain.models import (
     STATO_RIMBORSO_BADGE,
     RuoloSistema,
 )
+from src.lib.errori import messaggio_errore_db
 from src.lib.labels import etichetta_progetto, getf
 from src.ui.commenti_ui import blocco_commenti
 
@@ -52,30 +53,205 @@ if not progetti:
     st.info("Nessun progetto. I progetti nascono dall'approvazione delle proposte.")
     st.stop()
 
-st.dataframe(
-    pd.DataFrame(
-        [
-            {
-                "Acronimo": getf(p, "acronimo") or "",
-                "Identificativo": getf(p, "codice") or "",
-                "Titolo": p.titolo,
-                "Ente finanziatore": getf(p, "controparte") or "",
-                "Stato": "🟢 attivo" if p.stato == "attivo" else "⚫ chiuso",
-                "Inizio": f"{p.data_inizio:%d/%m/%Y}" if p.data_inizio else "",
-                "Fine": f"{p.data_fine:%d/%m/%Y}" if p.data_fine else "",
-                **({"Budget €": float(p.budget_totale or 0)} if economia else {}),
-            }
-            for p in progetti
-        ]
-    ),
-    hide_index=True,
-    use_container_width=True,
+# --- Elenco progetti con azioni per riga --------------------------------------
+
+
+@st.dialog("Modifica progetto", width="large")
+def _dialog_modifica(prog) -> None:
+    """Modifica i dati anagrafici ed economici del progetto."""
+    persone_att = persona_repo.list_persone(solo_attivi=True)
+    with st.form(f"mod_prog_{prog.id}"):
+        m1, m2, m3 = st.columns([2, 1, 1])
+        n_tit = m1.text_input("Titolo *", value=prog.titolo)
+        n_acr = m2.text_input("Acronimo", value=getf(prog, "acronimo") or "")
+        n_cod = m3.text_input("Identificativo / Codice", value=prog.codice or "")
+        m4, m5, m6 = st.columns(3)
+        n_ente = m4.text_input(
+            "Ente finanziatore / Cliente", value=prog.controparte or ""
+        )
+        n_ini = m5.date_input("Inizio", value=prog.data_inizio)
+        n_fine = m6.date_input("Fine", value=prog.data_fine)
+        m7, m8, m9 = st.columns(3)
+        n_budget = m7.number_input(
+            "Budget totale €",
+            min_value=0.0,
+            step=1000.0,
+            value=float(prog.budget_totale or 0),
+        )
+        n_costo = m8.number_input(
+            "Costo complessivo €",
+            min_value=0.0,
+            step=1000.0,
+            value=float(getf(prog, "costo_complessivo") or 0),
+        )
+        n_fin = m9.number_input(
+            "Finanziamento complessivo €",
+            min_value=0.0,
+            step=1000.0,
+            value=float(getf(prog, "finanziamento_complessivo") or 0),
+        )
+        m10, m11 = st.columns(2)
+        idx_r = next(
+            (i for i, x in enumerate(persone_att) if x.id == prog.responsabile_id),
+            None,
+        )
+        n_resp = m10.selectbox(
+            "Responsabile (PM)",
+            [None] + persone_att,
+            index=(idx_r + 1) if idx_r is not None else 0,
+            format_func=lambda x: "—" if x is None else x.nome_completo,
+        )
+        _tipi_ric = ["agevolato", "mercato", "ricorrente"]
+        n_ric = m11.selectbox(
+            "Tipo di ricavo",
+            _tipi_ric,
+            index=_tipi_ric.index(
+                getf(prog, "tipo_ricavo", "agevolato") or "agevolato"
+            ),
+            help="Per i KPI di sostenibilità (quota ricavi da mercato/ricorrenti).",
+        )
+        if st.form_submit_button("💾 Salva modifiche", type="primary"):
+            if not n_tit:
+                st.error("Il titolo è obbligatorio.")
+            elif n_ini and n_fine and n_fine < n_ini:
+                st.error("La data di fine non può precedere quella di inizio.")
+            else:
+                try:
+                    iniziativa_repo.update_iniziativa(
+                        prog.id,
+                        titolo=n_tit,
+                        acronimo=n_acr or None,
+                        codice=n_cod or None,
+                        controparte=n_ente or None,
+                        data_inizio=n_ini,
+                        data_fine=n_fine,
+                        budget_totale=n_budget or None,
+                        costo_complessivo=n_costo or None,
+                        finanziamento_complessivo=n_fin or None,
+                        responsabile_id=n_resp.id if n_resp else None,
+                        tipo_ricavo=n_ric,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    st.error(messaggio_errore_db(exc))
+                else:
+                    st.session_state["_msg_progetti"] = "Progetto aggiornato."
+                    st.rerun()
+    st.caption(
+        "CUP, tipo di progetto e logo si impostano nella scheda "
+        "«📄 Rendicontazione»."
+    )
+
+
+@st.dialog("Elimina progetto")
+def _dialog_elimina(prog) -> None:
+    """Eliminazione con riepilogo dei dati collegati e conferma esplicita."""
+    dip = iniziativa_repo.riepilogo_dipendenze(prog.id)
+    st.markdown(f"Stai per eliminare **{etichetta_progetto(prog)}**.")
+    eliminati = {
+        "Assegnazioni": dip["assegnazioni"],
+        "Ore a timesheet": dip["ore_timesheet"],
+        "Task": dip["task"],
+        "Deliverable": dip["deliverable"],
+        "Milestone": dip["milestone"],
+        "Work package": dip["work_package"],
+        "Voci di budget": dip["voci_budget"],
+        "Movimenti previsti": dip["movimenti_previsti"],
+    }
+    scollegati = {
+        "Movimenti bancari": dip["movimenti_bancari"],
+        "Documenti fiscali": dip["documenti"],
+        "Spese": dip["spese"],
+        "Missioni": dip["missioni"],
+        "File in archivio": dip["file_archivio"],
+    }
+    d1, d2 = st.columns(2)
+    d1.markdown("**Eliminati con il progetto**")
+    d1.markdown("\n".join(f"- {k}: **{v:g}**" for k, v in eliminati.items()))
+    d2.markdown("**Conservati, ma scollegati**")
+    d2.markdown("\n".join(f"- {k}: **{v:g}**" for k, v in scollegati.items()))
+    if dip["ore_timesheet"]:
+        st.error(
+            f"⚠️ Ci sono **{dip['ore_timesheet']:g} ore** già registrate a "
+            "timesheet: eliminando il progetto si perdono i dati di "
+            "rendicontazione. Valuta invece «⚫ Chiudi progetto» nella scheda "
+            "Stato."
+        )
+    else:
+        st.warning("L'operazione è irreversibile.")
+    conferma = st.checkbox(f"Confermo l'eliminazione di «{prog.titolo}»")
+    b1, b2 = st.columns(2)
+    if b1.button(
+        "🗑 Elimina definitivamente",
+        type="primary",
+        disabled=not conferma,
+        use_container_width=True,
+    ):
+        try:
+            iniziativa_repo.delete_iniziativa(prog.id)
+        except Exception as exc:  # noqa: BLE001
+            st.error(messaggio_errore_db(exc))
+        else:
+            st.session_state["_msg_progetti"] = f"Progetto «{prog.titolo}» eliminato."
+            st.rerun()
+    if b2.button("Annulla", use_container_width=True):
+        st.rerun()
+
+
+_msg = st.session_state.pop("_msg_progetti", None)
+if _msg:
+    st.success(_msg)
+
+_pesi = (
+    [1.1, 3.0, 1.6, 1.0, 1.9]
+    + ([1.2] if economia else [])
+    + ([0.6, 0.6] if is_admin else [])
 )
+_intestazioni = (
+    ["Acronimo", "Titolo", "Ente finanziatore", "Stato", "Periodo"]
+    + (["Budget €"] if economia else [])
+    + (["", ""] if is_admin else [])
+)
+for _col, _txt in zip(st.columns(_pesi), _intestazioni, strict=True):
+    _col.markdown(f"<small><b>{_txt}</b></small>", unsafe_allow_html=True)
+for p in progetti:
+    _c = st.columns(_pesi, vertical_alignment="center")
+    _c[0].markdown(getf(p, "acronimo") or getf(p, "codice") or "—")
+    _c[1].markdown(p.titolo)
+    _c[2].markdown(getf(p, "controparte") or "—")
+    _c[3].markdown("🟢 attivo" if p.stato == "attivo" else "⚫ chiuso")
+    _periodo = (
+        f"{p.data_inizio:%d/%m/%Y} → {p.data_fine:%d/%m/%Y}"
+        if p.data_inizio and p.data_fine
+        else "—"
+    )
+    _c[4].markdown(f"<small>{_periodo}</small>", unsafe_allow_html=True)
+    _i = 5
+    if economia:
+        _c[_i].markdown(f"{float(p.budget_totale or 0):,.0f}")
+        _i += 1
+    if is_admin:
+        if _c[_i].button("✏️", key=f"ed_{p.id}", help="Modifica i dati del progetto"):
+            _dialog_modifica(p)
+        if _c[_i + 1].button(
+            "🗑", key=f"del_{p.id}", help="Elimina il progetto (con conferma)"
+        ):
+            _dialog_elimina(p)
+
+if is_admin:
+    st.caption(
+        "Accanto a ogni riga: **✏️** modifica i dati del progetto, **🗑** lo "
+        "elimina (con riepilogo dei dati collegati e conferma)."
+    )
+st.divider()
 
 sel = st.selectbox(
     "Dettaglio progetto",
     options=progetti,
     format_func=lambda p: f"[{p.stato}] {etichetta_progetto(p)}",
+    help=(
+        "Scegli il progetto di cui vedere le schede sottostanti: budget, "
+        "flussi, milestone, rendicontazione, missioni, commenti e stato."
+    ),
 )
 alla_data = sel.data_inizio or date.today()
 

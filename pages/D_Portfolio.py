@@ -222,7 +222,12 @@ if is_admin:
             ]
         )
         fig_r = px.bar(
-            df_r, x="Anno", y="Importo €", color="Iniziativa", barmode="stack"
+            df_r,
+            x="Anno",
+            y="Importo €",
+            color="Iniziativa",
+            barmode="stack",
+            category_orders={"Anno": [str(a) for a in finestra]},
         )
         layout_base(
             fig_r,
@@ -317,6 +322,7 @@ else:
                 df_p,
                 x="Anno",
                 y="Ore",
+                category_orders={"Anno": [str(a) for a in finestra]},
                 color="Iniziativa",
                 barmode="stack",
                 hover_data=["Fonte"],

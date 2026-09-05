@@ -386,3 +386,35 @@ automatico/Drive: predisposto dalla libreria Drive esistente, non attivato.
   (deck riaperti con python-pptx; render visivo con LibreOffice).
 - Dipendenze nuove: `plotly`, `python-pptx` (in `requirements.txt`);
   `requirements-cron.txt` per il job GitHub Actions.
+
+### 13.7 Gestione progetti: modifica ed eliminazione (09/2026)
+
+Nella pagina **Progetti** l'elenco non è più una tabella statica: ogni riga ha
+accanto due pulsanti (solo amministratore), con etichetta di aiuto sotto
+l'elenco e `help` sui singoli pulsanti:
+
+- **✏️** apre un dialog di modifica dei dati del progetto (titolo, acronimo,
+  identificativo, ente finanziatore, date, budget, costo e finanziamento
+  complessivo, responsabile, tipo di ricavo). CUP, tipo progetto e logo
+  restano nella scheda «Rendicontazione».
+- **🗑** apre un dialog di eliminazione che mostra prima il **riepilogo dei
+  dati collegati** (`iniziativa_repo.riepilogo_dipendenze`), distinguendo ciò
+  che viene eliminato in cascata (assegnazioni e quindi ore a timesheet, task,
+  deliverable, milestone, work package, voci di budget, movimenti previsti) da
+  ciò che resta ma viene scollegato (movimenti bancari, documenti fiscali,
+  spese, missioni, file in archivio). Se esistono ore a timesheet compare un
+  avviso che suggerisce «Chiudi progetto» al posto dell'eliminazione.
+  L'eliminazione richiede una spunta di conferma esplicita.
+
+Anche il menu «Dettaglio progetto» ha ora un testo di aiuto, e in **Proposte**
+l'expander è etichettato «✏️ Modifica / 🗑 elimina proposta» con una didascalia
+che indica dove si modifica ed elimina.
+
+**Messaggi d'errore leggibili** (`src/lib/errori.py`). Su Streamlit Cloud il
+testo degli errori del database viene oscurato e l'utente vedeva solo
+`CheckViolation` con il traceback. Ora le pagine Proposte e Progetti
+intercettano l'eccezione e mostrano la spiegazione in italiano del vincolo
+violato (date incoerenti, identificativo duplicato, probabilità fuori range,
+stato non ammesso, tariffe sovrapposte…), con validazione anche lato UI prima
+di scrivere. Il caso più frequente era la **data di fine precedente a quella
+di inizio** nella creazione di una proposta.
