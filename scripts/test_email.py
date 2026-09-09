@@ -35,9 +35,9 @@ def main() -> int:
     destinatario = sys.argv[1]
     cfg = config_smtp()
     print(
-        f"host={cfg.host or '(vuoto)'} port={cfg.port} user={cfg.user or '(vuoto)'} "
-        f"from={cfg.mittente or '(vuoto)'} password={'impostata' if cfg.password else 'MANCANTE'} "
-        f"attive={cfg.attive}"
+        f"host={cfg.host or '(vuoto)'} port={cfg.port} "
+        f"user={cfg.user or '(vuoto)'} from={cfg.mittente or '(vuoto)'} "
+        f"password={'impostata' if cfg.password else 'MANCANTE'} attive={cfg.attive}"
     )
     if not cfg.configurato:
         print("SMTP non configurato: compila [smtp] nei secrets o le variabili SMTP_*.")
@@ -48,7 +48,8 @@ def main() -> int:
             cfg,
             destinatario,
             "[ANTECNICA] Prova SMTP",
-            f"<p>Configurazione SMTP di ANTECNICA Gestionale funzionante ({quando}).</p>",
+            "<p>Configurazione SMTP di ANTECNICA Gestionale funzionante "
+            f"({quando}).</p>",
             f"Configurazione SMTP di ANTECNICA Gestionale funzionante ({quando}).",
         )
     except Exception as exc:  # noqa: BLE001
