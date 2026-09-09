@@ -118,6 +118,43 @@ allowed_email_domain = "antecnica.it"
 > mai in git. `aggiorna_agest.bat` fa `git add -A`, ma `secrets.toml` e `.env`
 > sono esclusi da `.gitignore`.
 
+## 5b. E-mail (SMTP) con Gmail / Google Workspace
+
+Le notifiche (task assegnato, commento, briefing settimanale, scadenze,
+monthly report) partono da un account Gmail/Workspace tramite **smtp.gmail.com**.
+Serve una **password per le app**: la password normale viene rifiutata.
+
+1. Scegli l'account mittente (consigliato un indirizzo dedicato, es.
+   `gestionale@antecnica.it`, oppure il tuo). Nella console Admin di Workspace la
+   verifica in due passaggi deve essere consentita per quell'utente.
+2. Con quell'account: myaccount.google.com → **Sicurezza** → **Verifica in due
+   passaggi** (attivala se spenta) → **Password per le app** → crea «agest» e
+   copia i 16 caratteri (si vedono una volta sola).
+3. Streamlit Cloud → Manage app → Settings → **Secrets**: aggiungi
+   ```toml
+   [smtp]
+   host = "smtp.gmail.com"
+   port = 587
+   user = "gestionale@antecnica.it"
+   password = "xxxx xxxx xxxx xxxx"
+   from = "gestionale@antecnica.it"
+   app_url = "https://antgest.streamlit.app"
+   attive = true
+   ```
+   (in locale: le stesse righe in `.streamlit/secrets.toml`).
+4. GitHub → repository → Settings → Secrets and variables → **Actions**: crea
+   `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASSWORD`,
+   `SMTP_FROM`, `APP_URL` e `DATABASE_URL` (DSN Neon) per i tre job schedulati.
+5. Prova:
+   ```bash
+   python scripts/test_email.py tuo.nome@antecnica.it
+   ```
+
+Note: `from` deve essere l'account stesso (o un suo alias configurato in Gmail),
+altrimenti Gmail lo riscrive; limite di invio Workspace via SMTP ≈ 2.000
+messaggi/giorno, più che sufficiente. Se in futuro vorrai un mittente senza
+password (relay per IP o OAuth), usa `smtp-relay.gmail.com` dalla console Admin.
+
 ## 6. Avvio
 
 ```bash
