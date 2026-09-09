@@ -8,6 +8,8 @@ proprie guardie di ruolo come difesa aggiuntiva.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from src.auth.session import require_login, sidebar_utente
@@ -15,11 +17,25 @@ from src.auth.visibilita import livello, vede_economia
 from src.domain.models import RuoloSistema
 from src.lib.labels import versione_app
 
-st.set_page_config(page_title="ANTECNICA Gestionale", page_icon="🗂️", layout="wide")
+ASSETS = Path(__file__).resolve().parent / "assets"
+
+st.set_page_config(
+    page_title="ANTECNICA Gestionale",
+    page_icon=str(ASSETS / "logo_antecnica_icona.png"),
+    layout="wide",
+)
 
 
 def main() -> None:
     persona = require_login()
+
+    # Logo ANTECNICA in alto a sinistra (barra laterale aperta) e icona con la
+    # barra chiusa: distingue a colpo d'occhio agest da MAIC tasks.
+    st.logo(
+        str(ASSETS / "logo_antecnica.png"),
+        icon_image=str(ASSETS / "logo_antecnica_icona.png"),
+        size="large",
+    )
 
     admin = vede_economia(persona.ruolo_sistema)
     admin_pm = persona.ruolo_sistema in (RuoloSistema.admin, RuoloSistema.pm)

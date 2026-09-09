@@ -24,3 +24,6 @@ Thumbs.db
 hipa/
 hipa/
 hipa/
+
+# Config locale Claude Code (launch.json)
+.claude/

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from pathlib import Path
 
 import requests
 import streamlit as st
@@ -170,14 +171,53 @@ def require_login() -> Persona:
     if persona is not None:
         return persona
 
-    st.title("ANTECNICA Gestionale")
-    err = st.session_state.pop("_login_error", None)
-    if err:
-        st.error(err)
-    st.info("Accedi con il tuo account Google aziendale @antecnica.it.")
-    login_button()
+    _schermata_accesso()
     st.stop()
     raise RuntimeError("unreachable")  # per il type checker
+
+
+_LOGO_CHIARO = (
+    Path(__file__).resolve().parents[2] / "assets" / "logo_antecnica_chiaro.png"
+)
+
+_CSS_ACCESSO = """
+<style>
+.stApp { background: #0B0F14; }
+[data-testid="stHeader"] { background: rgba(0, 0, 0, 0); }
+.stApp h1, .stApp p, .stApp label, .stApp .stMarkdown { color: #F4F6F8; }
+.stApp .stAlert p { color: inherit; }
+/* niente barra laterale prima del login (in locale Streamlit mostrerebbe
+   l'elenco automatico delle pagine della cartella pages/) */
+[data-testid="stSidebar"], [data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
+  display: none;
+}
+</style>
+"""
+
+
+def _schermata_accesso() -> None:
+    """Pagina di accesso: fondo antracite del template ANTECNICA, logo chiaro,
+    bottone Google. Il CSS vale solo per questa schermata (dopo il login la
+    pagina viene rieseguita senza)."""
+    st.markdown(_CSS_ACCESSO, unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.write("")
+        st.write("")
+        if _LOGO_CHIARO.exists():
+            st.image(str(_LOGO_CHIARO), width=420)
+        st.title("ANTECNICA Gestionale")
+        st.markdown(
+            "<p style='color:#9BABBA'>Timesheet, progetti, deliverable e task, "
+            "finanza e presentazioni — in un unico posto.</p>",
+            unsafe_allow_html=True,
+        )
+        err = st.session_state.pop("_login_error", None)
+        if err:
+            st.error(err)
+        st.info("Accedi con il tuo account Google aziendale @antecnica.it.")
+        login_button()
 
 
 def require_role(*roles: RuoloSistema) -> Persona:
