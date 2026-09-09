@@ -218,6 +218,17 @@ def _schermata_accesso() -> None:
             st.error(err)
         st.info("Accedi con il tuo account Google aziendale @antecnica.it.")
         login_button()
+        # versione in chiaro: permette di capire a colpo d'occhio quale build
+        # sta girando (utile quando Streamlit Cloud non ha ancora ridistribuito)
+        from src.lib.labels import versione_app
+
+        versione = versione_app()
+        if versione:
+            st.markdown(
+                f"<p style='color:#45535F;font-size:12px;margin-top:24px'>"
+                f"versione {versione}</p>",
+                unsafe_allow_html=True,
+            )
 
 
 def require_role(*roles: RuoloSistema) -> Persona:
