@@ -194,9 +194,28 @@ def task_dialog(
             "ufficiale)."
         ),
     )
-    note = st.text_area("Descrizione / note", value=task.descrizione or "")
+    note = st.text_area(
+        "Descrizione e note del task",
+        value=task.descrizione or "",
+        help=(
+            "Testo libero (Markdown). Le note datate «**gg/mm/aaaa** — …» in coda "
+            "sono la cronaca del task: alimentano «La mia settimana» e il monthly "
+            "report."
+        ),
+    )
+    nota_nuova = st.text_input(
+        "➕ Nota di avanzamento (opz.)",
+        placeholder="es. inviata la bozza al project officer",
+        help="Viene accodata alle note con la data di oggi.",
+    )
     b1, b2 = st.columns(2)
     if b1.button("💾 Salva", type="primary", use_container_width=True):
+        descrizione_finale = (note or "").rstrip()
+        if nota_nuova.strip():
+            riga = f"**{date.today():%d/%m/%Y}** — {nota_nuova.strip()}"
+            descrizione_finale = (
+                f"{descrizione_finale}\n\n{riga}" if descrizione_finale else riga
+            )
         task_repo.update_task(
             task.id,
             eseguito_da=persona.email,
@@ -204,7 +223,7 @@ def task_dialog(
             priorita=prio,
             scadenza=scad,
             deliverable_id=deliverable_id,
-            descrizione=note or None,
+            descrizione=descrizione_finale or None,
             ore_stimate=ore_st or None,
             ore_effettive=ore_eff or None,
         )
@@ -238,6 +257,16 @@ def _storico_stati(task: Task) -> None:
             nuovo = STATO_TASK_BADGE.get(r["stato_nuovo"], r["stato_nuovo"])
             chi = f" · {r['cambiato_da']}" if r.get("cambiato_da") else ""
             st.caption(f"{r['cambiato_il']:%d/%m/%Y %H:%M} — {prec} → {nuovo}{chi}")
+
+
+def _notifica_assegnazione(task: Task, owner, da_chi: Persona, progetto) -> None:
+    """E-mail all'owner (se diverso da chi crea); mai bloccante."""
+    try:
+        from src.lib.notifiche_app import notifica_task_assegnato
+
+        notifica_task_assegnato(task, owner, da_chi, progetto=progetto)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def blocco_subtask(
@@ -304,7 +333,7 @@ def blocco_subtask(
                 if not titolo:
                     st.error("Il titolo è obbligatorio.")
                 else:
-                    task_repo.create_task(
+                    nuovo = task_repo.create_task(
                         titolo=titolo,
                         owner_id=owner.id if owner else None,
                         supervisor_id=task.supervisor_id,
@@ -316,6 +345,7 @@ def blocco_subtask(
                         priorita=task.priorita,
                         eseguito_da=persona.email,
                     )
+                    _notifica_assegnazione(nuovo, owner, persona, None)
                     st.rerun()
 
 
@@ -380,7 +410,7 @@ def form_nuovo_task(
             if not titolo:
                 st.error("Il titolo è obbligatorio.")
             else:
-                task_repo.create_task(
+                nuovo = task_repo.create_task(
                     titolo=titolo,
                     owner_id=owner.id,
                     supervisor_id=sup.id if sup else None,
@@ -396,6 +426,16 @@ def form_nuovo_task(
                     scadenza=scad,
                     ore_stimate=ore_st or None,
                     eseguito_da=default_owner.email,
+                )
+                _notifica_assegnazione(
+                    nuovo,
+                    owner,
+                    default_owner,
+                    (
+                        etichetta_con_tag(ini or iniziativa_fissa)
+                        if (ini or iniziativa_fissa) is not None
+                        else None
+                    ),
                 )
                 st.rerun()
 

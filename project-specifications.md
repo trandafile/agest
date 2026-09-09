@@ -484,3 +484,63 @@ sull'eliminazione del padre) ed erano mostrati ovunque, ma si potevano
   restano nascoste, come per i task normali).
 - Nei report i subtask sono già inclusi: indentati sotto il padre nel report
   attività e nel SAL di progetto, e marcati come riga «↳» nel deck personale.
+
+### 13.10 Monthly report, note sui task e notifiche a evento (09/2026)
+
+**Monthly report (creazione off-line con un assistente AI).** Alcuni
+progetti richiedono un report mensile al finanziatore. La piattaforma non lo
+scrive: **raccoglie i dati del mese in un file `.md`** che contiene anche il
+**prompt** per farlo scrivere a ChatGPT o Claude, e avvisa il responsabile.
+
+- Attivazione: pagina **Progetti → scheda 📆 Monthly report** (responsabile o
+  admin): spunta «richiede un monthly report» e istruzioni per l'assistente
+  (lingua, formato del finanziatore, destinatario); colonne
+  `iniziativa.monthly_report` e `monthly_report_istruzioni` (migrazione 0017).
+- Contenuto del file (`src/lib/monthly_report.py`, puro e testato): istruzioni
+  per l'assistente con struttura del report (executive summary, attività per
+  deliverable, stato deliverable/milestone, problemi e rischi, piano del mese
+  successivo, risorse) e vincoli (non inventare, «[DA VERIFICARE]»); sezione
+  «Note del responsabile» da compilare; **dati raccolti dalla piattaforma**:
+  anagrafica del progetto, deliverable con avanzamento, milestone (evidenziate
+  quelle del mese), task attivi nel mese raggruppati per deliverable con note,
+  **note datate del mese**, **cambi di stato del mese** (da `task_storico`),
+  **commenti del mese**, subtask; task completati nel mese; ore a timesheet
+  per persona; missioni; commenti a livello di progetto.
+- Generazione e archivio: tabella `monthly_report` (un record per
+  progetto/mese, stati `pronto` → `completato`, testo del file, date di
+  generazione/notifica). `monthly_pack.assicura_mese_precedente()` genera il
+  mese precedente se manca ed è idempotente: la chiama la **Dashboard** a ogni
+  apertura (così funziona anche senza job schedulato) e lo script.
+- Avvisi: in **Dashboard** compare «📆 Monthly report da preparare» con il
+  download del `.md` per il responsabile (l'admin li vede tutti); nella scheda
+  del progetto si può generare/rigenerare un mese qualsiasi, scaricare,
+  vedere l'anteprima, segnare **completato**, riaprire, eliminare (admin).
+- E-mail a inizio mese: `scripts/monthly_reports.py` (GitHub Actions
+  `monthly-reports.yml`, ogni giorno 06:30 UTC, deduplica a DB) genera i file
+  mancanti e manda al responsabile l'e-mail «file pronto» **con il `.md` in
+  allegato** (`notifiche.costruisci_messaggio` supporta gli allegati).
+
+**Note sui task (come MAIC tasks).** Esistevano già due meccanismi: la
+*descrizione* del task (Markdown libero) con le **note datate** «**gg/mm/aaaa** —
+testo» accodate da «La mia settimana», e i **commenti** (tabella `commento`,
+su task, deliverable, milestone, progetto, missione). Ora il dialog del task ha
+il campo «➕ Nota di avanzamento» che accoda una nota datata al salvataggio, e
+il monthly report estrae le note del mese con `note_datate_nel_mese`.
+
+**Notifiche e-mail: confronto con MAIC tasks.** MAIC tasks manda e-mail a
+evento (task assegnato, commento, sign-off deliverable) dall'app, più briefing
+settimanale e avviso «scaduto ieri» dal cron; la configurazione SMTP sta in una
+tabella `settings` gestita dal pannello admin. agest aveva solo il cron
+(briefing + scaduti). Ora:
+
+- e-mail **a evento dall'app** (`src/lib/notifiche_app.py`): task assegnato
+  (all'owner, se diverso da chi crea; anche per i subtask) e nuovo commento
+  (a owner/supervisor del task o deliverable, o al responsabile del progetto,
+  escluso l'autore); invio in thread separato, mai bloccante, no-op senza SMTP;
+- configurazione **nei secrets di Streamlit** (`[smtp]` con host, port, user,
+  password, from, app_url, attive — oppure chiavi `SMTP_*` al primo livello)
+  con fallback alle variabili d'ambiente; per i job GitHub Actions restano i
+  secrets del repository. Scelta diversa da MAIC tasks (tabella `settings`):
+  la password SMTP non entra nel DB;
+- restano dal cron: briefing settimanale, avviso scadenza, monthly report.
+  Non replicato il sign-off dei deliverable.

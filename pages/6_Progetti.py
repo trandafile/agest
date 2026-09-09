@@ -310,21 +310,31 @@ if economia:
     )
 
 if economia:
-    tab_quote, tab_fin, tab_ms, tab_rend, tab_miss, tab_comm, tab_stato = st.tabs(
-        [
-            "💶 Budget vs consuntivo",
-            "💰 Flussi finanziari",
-            "🎯 Milestone",
-            "📄 Rendicontazione",
-            "✈️ Missioni",
-            "💬 Commenti",
-            "🚦 Stato",
-        ]
+    tab_quote, tab_fin, tab_ms, tab_rend, tab_miss, tab_comm, tab_stato, tab_mr = (
+        st.tabs(
+            [
+                "💶 Budget vs consuntivo",
+                "💰 Flussi finanziari",
+                "🎯 Milestone",
+                "📄 Rendicontazione",
+                "✈️ Missioni",
+                "💬 Commenti",
+                "🚦 Stato",
+                "📆 Monthly report",
+            ]
+        )
     )
 else:
     tab_quote = tab_fin = None
-    tab_ms, tab_rend, tab_miss, tab_comm, tab_stato = st.tabs(
-        ["🎯 Milestone", "📄 Anagrafica", "✈️ Missioni", "💬 Commenti", "🚦 Stato"]
+    tab_ms, tab_rend, tab_miss, tab_comm, tab_stato, tab_mr = st.tabs(
+        [
+            "🎯 Milestone",
+            "📄 Anagrafica",
+            "✈️ Missioni",
+            "💬 Commenti",
+            "🚦 Stato",
+            "📆 Monthly report",
+        ]
     )
 
 with tab_comm:
@@ -703,3 +713,134 @@ with tab_stato:
                 st.rerun()
     else:
         st.info("Solo l'admin può cambiare lo stato del progetto.")
+
+
+# --- Monthly report -------------------------------------------------------------
+with tab_mr:
+    from src.data import monthly_repo
+    from src.lib.monthly_pack import genera_e_salva
+    from src.lib.monthly_report import (
+        ISTRUZIONI_DEFAULT,
+        etichetta_mese,
+        mese_precedente,
+        nome_file,
+    )
+
+    st.caption(
+        "Per i progetti che lo richiedono, la piattaforma raccoglie ogni mese in un "
+        "file **.md** i dati del mese (deliverable, task con note, cambi di stato e "
+        "commenti, ore, missioni) insieme al **prompt** per generare il monthly "
+        "report con ChatGPT o Claude. Il responsabile riceve l'avviso in Dashboard "
+        "e via e-mail a inizio mese."
+    )
+    puo_mr = is_admin or sel.responsabile_id == persona.id
+    with st.form("mr_impostazioni"):
+        mr_flag = st.checkbox(
+            "Questo progetto richiede un monthly report",
+            value=bool(getf(sel, "monthly_report")),
+        )
+        mr_istr = st.text_area(
+            "Istruzioni per l'assistente AI (lingua, formato, destinatario, "
+            "sezioni richieste dal finanziatore)",
+            value=getf(sel, "monthly_report_istruzioni") or "",
+            placeholder=ISTRUZIONI_DEFAULT,
+            height=90,
+        )
+        if st.form_submit_button("💾 Salva impostazioni", disabled=not puo_mr):
+            iniziativa_repo.update_iniziativa(
+                sel.id,
+                monthly_report=mr_flag,
+                monthly_report_istruzioni=mr_istr.strip() or None,
+            )
+            st.rerun()
+    if not puo_mr:
+        st.info(
+            "Solo il responsabile del progetto o l'amministratore può gestire il "
+            "monthly report."
+        )
+
+    _oggi = date.today()
+    _mesi = []
+    _a, _m = _oggi.year, _oggi.month
+    for _ in range(18):
+        _mesi.append((_a, _m))
+        _m -= 1
+        if _m == 0:
+            _a, _m = _a - 1, 12
+    _prec = mese_precedente(_oggi)
+    g1, g2 = st.columns([2, 1.4])
+    mr_mese = g1.selectbox(
+        "Mese",
+        _mesi,
+        index=_mesi.index(_prec) if _prec in _mesi else 0,
+        format_func=lambda am: etichetta_mese(*am),
+    )
+    if g2.button(
+        "⚙️ Genera / rigenera il file .md",
+        type="primary",
+        disabled=not puo_mr,
+        use_container_width=True,
+    ):
+        try:
+            genera_e_salva(sel, mr_mese[0], mr_mese[1])
+        except Exception as exc:  # noqa: BLE001
+            st.error(messaggio_errore_db(exc))
+        else:
+            st.success(
+                f"File del monthly report di {etichetta_mese(*mr_mese)} generato."
+            )
+            st.rerun()
+
+    _report = []
+    try:
+        _report = monthly_repo.list_report(sel.id)
+    except Exception:  # noqa: BLE001 — migrazione 0017 non ancora applicata
+        st.warning("Tabella monthly_report assente: applica la migrazione 0017.")
+    if not _report:
+        st.info("Nessun file generato per questo progetto.")
+    for r in _report:
+        with st.container(border=True):
+            h1, h2, h3, h4 = st.columns([3, 1.4, 1.4, 1])
+            stato_ic = "✅ completato" if r["stato"] == "completato" else "🟡 pronto"
+            h1.markdown(
+                f"**{etichetta_mese(r['anno'], r['mese'])}** · {stato_ic} · "
+                f"generato il "
+                f"{r['generato_il']:%d/%m/%Y}"
+                + (
+                    f" · e-mail inviata il {r['notificato_il']:%d/%m/%Y}"
+                    if r["notificato_il"]
+                    else ""
+                )
+            )
+            rep = monthly_repo.get_report(sel.id, r["anno"], r["mese"])
+            if rep:
+                h2.download_button(
+                    "⬇️ Scarica .md",
+                    rep["contenuto_md"].encode("utf-8"),
+                    nome_file(sel.acronimo, r["anno"], r["mese"]),
+                    "text/markdown",
+                    key=f"mr_dl_{r['id']}",
+                    use_container_width=True,
+                )
+            if puo_mr:
+                if r["stato"] == "pronto":
+                    if h3.button(
+                        "✅ Completato",
+                        key=f"mr_ok_{r['id']}",
+                        use_container_width=True,
+                    ):
+                        monthly_repo.segna_completato(r["id"])
+                        st.rerun()
+                elif h3.button(
+                    "↩️ Riapri", key=f"mr_re_{r['id']}", use_container_width=True
+                ):
+                    monthly_repo.riapri(r["id"])
+                    st.rerun()
+                if is_admin and h4.button(
+                    "🗑", key=f"mr_del_{r['id']}", help="Elimina il file"
+                ):
+                    monthly_repo.elimina_report(r["id"])
+                    st.rerun()
+            if rep:
+                with st.expander("Anteprima"):
+                    st.markdown(rep["contenuto_md"])

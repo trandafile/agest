@@ -269,25 +269,168 @@ def html_scaduto(nome: str, t: dict, oggi: date, app_url: str) -> tuple[str, str
 
 
 def invia(
-    cfg: ConfigSMTP, destinatario: str, oggetto: str, corpo_html: str, corpo_testo: str
+    cfg: ConfigSMTP,
+    destinatario: str,
+    oggetto: str,
+    corpo_html: str,
+    corpo_testo: str,
+    allegati: list[tuple[str, bytes, str]] | None = None,
 ) -> bool:
     """Invia via SMTP STARTTLS. In dry-run (SMTP non configurato) logga e
-    ritorna False."""
+    ritorna False. `allegati`: [(nome_file, contenuto, mime)]."""
     if not cfg.configurato:
         log.info("[dry-run] a %s: %s", destinatario, oggetto)
         return False
-    msg = EmailMessage()
-    msg["Subject"] = oggetto
-    msg["From"] = cfg.mittente or cfg.user
-    msg["To"] = destinatario
-    msg.set_content(corpo_testo)
-    msg.add_alternative(corpo_html, subtype="html")
+    msg = costruisci_messaggio(
+        cfg, destinatario, oggetto, corpo_html, corpo_testo, allegati
+    )
     with smtplib.SMTP(cfg.host, cfg.port, timeout=30) as s:
         s.starttls()
         if cfg.user:
             s.login(cfg.user, cfg.password)
         s.send_message(msg)
     return True
+
+
+def costruisci_messaggio(
+    cfg: ConfigSMTP,
+    destinatario: str,
+    oggetto: str,
+    corpo_html: str,
+    corpo_testo: str,
+    allegati: list[tuple[str, bytes, str]] | None = None,
+) -> EmailMessage:
+    """Messaggio multipart (testo + html [+ allegati]); separato da `invia`
+    per essere testabile senza SMTP."""
+    msg = EmailMessage()
+    msg["Subject"] = oggetto
+    msg["From"] = cfg.mittente or cfg.user
+    msg["To"] = destinatario
+    msg.set_content(corpo_testo)
+    msg.add_alternative(corpo_html, subtype="html")
+    for nome_file, dati, mime in allegati or []:
+        maintype, _, subtype = (mime or "application/octet-stream").partition("/")
+        msg.add_attachment(
+            dati,
+            maintype=maintype,
+            subtype=subtype or "octet-stream",
+            filename=nome_file,
+        )
+    return msg
+
+
+# ---------------------------------------------------------------------------
+# Notifiche a evento (task assegnato, commento, monthly report pronto)
+# ---------------------------------------------------------------------------
+
+
+def _cornice(titolo: str, colore: str, corpo: str, app_url: str, link_txt: str) -> str:
+    return (
+        "<div style='font-family:Segoe UI,Calibri,Arial,sans-serif;"
+        f"color:{INK};max-width:680px'>"
+        f"<h2 style='color:{colore};margin:0 0 4px'>{titolo}</h2>"
+        f"{corpo}"
+        f"<p style='margin-top:20px'><a href='{html.escape(app_url)}' "
+        f"style='color:{BRAND}'>{link_txt}</a>"
+        f" · <span style='color:{MUTED}'>ANTECNICA Gestionale</span></p></div>"
+    )
+
+
+def html_task_assegnato(
+    nome: str, t: dict, da_chi: str, app_url: str
+) -> tuple[str, str]:
+    """(html, testo) per «ti è stato assegnato un task»."""
+    scad = t.get("scadenza")
+    quando = f" con scadenza <b>{scad:%d/%m/%Y}</b>" if scad else ""
+    prog = (
+        f" nel progetto <b>{html.escape(str(t['progetto']))}</b>"
+        if t.get("progetto")
+        else ""
+    )
+    corpo = (
+        f"<p>Ciao {html.escape(nome)}, <b>{html.escape(da_chi)}</b> "
+        "ti ha assegnato il task "
+        f"<b>{html.escape(t.get('titolo') or '')}</b>{prog}{quando}.</p>"
+    )
+    testo = (
+        f"{da_chi} ti ha assegnato il task '{t.get('titolo')}'"
+        + (f" ({t['progetto']})" if t.get("progetto") else "")
+        + (f", scadenza {scad:%d/%m/%Y}" if scad else "")
+        + f". {app_url}"
+    )
+    return (
+        _cornice("Nuovo task assegnato", BRAND, corpo, app_url, "Apri il gestionale"),
+        testo,
+    )
+
+
+def html_commento(
+    nome: str, titolo_entita: str, autore: str, testo_commento: str, app_url: str
+) -> tuple[str, str]:
+    """(html, testo) per «nuovo commento su …»."""
+    corpo = (
+        f"<p>Ciao {html.escape(nome)}, <b>{html.escape(autore)}</b> ha commentato "
+        f"<b>{html.escape(titolo_entita)}</b>:</p>"
+        f"<blockquote style='border-left:3px solid {BRAND};"
+        "margin:8px 0;padding:4px 12px;"
+        f"color:{MUTED}'>{html.escape(testo_commento)}</blockquote>"
+    )
+    testo = f"{autore} ha commentato '{titolo_entita}': {testo_commento}\n{app_url}"
+    return (
+        _cornice("Nuovo commento", BRAND, corpo, app_url, "Rispondi nel gestionale"),
+        testo,
+    )
+
+
+def html_monthly_pronto(
+    nome: str, etichetta: str, anno: int, mese: int, app_url: str
+) -> tuple[str, str]:
+    """(html, testo) per «il file del monthly report è pronto»."""
+    mesi = [
+        "",
+        "gennaio",
+        "febbraio",
+        "marzo",
+        "aprile",
+        "maggio",
+        "giugno",
+        "luglio",
+        "agosto",
+        "settembre",
+        "ottobre",
+        "novembre",
+        "dicembre",
+    ]
+    mese_txt = f"{mesi[mese]} {anno}"
+    corpo = (
+        f"<p>Ciao {html.escape(nome)}, è pronto il file per il <b>monthly report di "
+        f"{mese_txt}</b> del progetto <b>{html.escape(etichetta)}</b> (in allegato, "
+        "e scaricabile dalla Dashboard).</p>"
+        "<ol style='color:" + MUTED + "'>"
+        "<li>Apri il file .md e compila la sezione «Note del responsabile».</li>"
+        "<li>Incolla l'intero file in ChatGPT o Claude: produrrà la bozza "
+        "del report.</li>"
+        "<li>Rifinisci la bozza e segna il report come completato nella "
+        "pagina Progetti.</li>"
+        "</ol>"
+    )
+    testo = (
+        f"E' pronto il file per il monthly report di {mese_txt} "
+        f"del progetto {etichetta} "
+        "(in allegato). Compila le note del responsabile, incollalo in "
+        "ChatGPT/Claude e "
+        f"segna il report come completato nel gestionale. {app_url}"
+    )
+    return (
+        _cornice(
+            f"Monthly report {etichetta} — {mese_txt}",
+            BRAND,
+            corpo,
+            app_url,
+            "Apri la Dashboard",
+        ),
+        testo,
+    )
 
 
 # ---------------------------------------------------------------------------

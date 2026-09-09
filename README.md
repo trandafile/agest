@@ -99,6 +99,16 @@ GOOGLE_REDIRECT_URI = "https://antgest.streamlit.app"   # in locale: http://loca
 [database]
 dsn = "postgresql://<user>:<password>@<host>-pooler.<region>.aws.neon.tech/<db>?sslmode=require"
 
+# --- E-mail a evento dall'app (opzionale; senza, nessun invio) ---
+[smtp]
+host = "smtp.example.com"
+port = 587
+user = "agest@antecnica.it"
+password = "<password-o-app-password>"
+from = "agest@antecnica.it"
+app_url = "https://antgest.streamlit.app"
+attive = true
+
 # --- Parametri applicativi ---
 [app]
 allowed_email_domain = "antecnica.it"
@@ -157,5 +167,6 @@ db/migrations/             # 0001 … 0014 + 0015 v3 (piano ore, parametri, stor
 db/seed.sql                # dati di sviluppo (persone, tariffe, festività, demo)
 scripts/apply_schema.py    # applica migrazioni/seed a Neon
 scripts/send_reminders.py  # reminder e-mail headless (GitHub Actions, cron 06:00 UTC)
+scripts/monthly_reports.py # monthly report: genera .md del mese precedente + e-mail (06:30 UTC)
 tests/                     # pytest + streamlit AppTest
 ```

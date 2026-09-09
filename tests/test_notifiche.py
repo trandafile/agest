@@ -6,9 +6,13 @@ from datetime import date
 
 from src.lib.notifiche import (
     ConfigSMTP,
+    costruisci_messaggio,
     deve_inviare_briefing,
     html_briefing,
+    html_commento,
+    html_monthly_pronto,
     html_scaduto,
+    html_task_assegnato,
     invia,
     scaduti_ieri,
     seleziona_briefing,
@@ -106,3 +110,37 @@ def test_rendering_html_e_testo():
         "Luigi", _t(titolo="X", scadenza=date(2026, 9, 6)), OGGI, "https://app"
     )
     assert "06/09/2026" in h2 and "06/09/2026" in t2
+
+
+def test_messaggio_con_allegato_markdown():
+    cfg = ConfigSMTP(
+        host="smtp.x", user="u", password="p", mittente="agest@antecnica.it"
+    )
+    msg = costruisci_messaggio(
+        cfg,
+        "a@b.it",
+        "Oggetto",
+        "<b>ciao</b>",
+        "ciao",
+        allegati=[("monthly_report_X_2026-08.md", b"# titolo", "text/markdown")],
+    )
+    assert msg["From"] == "agest@antecnica.it" and msg["To"] == "a@b.it"
+    parti = list(msg.iter_attachments())
+    assert len(parti) == 1
+    assert parti[0].get_filename() == "monthly_report_X_2026-08.md"
+    assert parti[0].get_content_type() == "text/markdown"
+    assert msg.get_body(preferencelist=("html",)) is not None
+
+
+def test_html_eventi():
+    h, t = html_task_assegnato(
+        "Anna",
+        {"titolo": "Misure <EM>", "scadenza": date(2026, 9, 30), "progetto": "CASCADE"},
+        "Luigi Boccia",
+        "https://app",
+    )
+    assert "Misure &lt;EM&gt;" in h and "30/09/2026" in h and "CASCADE" in t
+    h, t = html_commento("Anna", "Misure", "Luigi", "ok <b>", "https://app")
+    assert "ok &lt;b&gt;" in h and "Luigi ha commentato" in t
+    h, t = html_monthly_pronto("Luigi", "CASCADE", 2026, 8, "https://app")
+    assert "agosto 2026" in h and "CASCADE" in t and "https://app" in h

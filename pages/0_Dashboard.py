@@ -158,6 +158,43 @@ with tab2:
     st.caption("Task e subtask di cui sei supervisor.")
     _render_scope(supervisionati, "sup")
 
+# --- Monthly report pronti (responsabile di progetto / admin) ------------------
+try:
+    from src.data import monthly_repo
+    from src.lib.monthly_pack import assicura_mese_precedente
+    from src.lib.monthly_report import etichetta_mese, nome_file
+
+    assicura_mese_precedente()  # genera il mese precedente se manca (idempotente)
+    _pronti = monthly_repo.report_pronti_per_persona(persona.id, is_admin)
+except Exception:  # noqa: BLE001 — migrazione 0017 non ancora applicata
+    _pronti = []
+if _pronti:
+    st.divider()
+    st.subheader("📆 Monthly report da preparare")
+    st.warning(
+        f"Ci sono **{len(_pronti)}** file pronti per i monthly report. Scarica il "
+        "file .md, compila le «Note del responsabile», incollalo in ChatGPT o "
+        "Claude per ottenere la bozza del report, poi segnalo come completato "
+        "in **Progetti → 📆 Monthly report**."
+    )
+    for r in _pronti:
+        c1, c2 = st.columns([4, 1.4])
+        etich = r["acronimo"] or r["codice"] or r["titolo"]
+        c1.markdown(
+            f"**{etich}** — {etichetta_mese(r['anno'], r['mese'])} · file generato il "
+            f"{r['generato_il']:%d/%m/%Y}"
+        )
+        rep = monthly_repo.get_report(r["iniziativa_id"], r["anno"], r["mese"])
+        if rep:
+            c2.download_button(
+                "⬇️ Scarica .md",
+                rep["contenuto_md"].encode("utf-8"),
+                nome_file(r["acronimo"], r["anno"], r["mese"]),
+                "text/markdown",
+                key=f"mr_dl_{r['id']}",
+                use_container_width=True,
+            )
+
 # --- Proposte/progetti di cui sono responsabile -----------------------------
 mie_iniziative = [i for i in iniziative if i.responsabile_id == persona.id]
 if mie_iniziative:

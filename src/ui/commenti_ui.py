@@ -83,9 +83,37 @@ def blocco_commenti(
         if st.form_submit_button("💬 Commenta", type="primary"):
             if testo.strip():
                 commento_repo.add_commento(entita, entita_id, testo, persona.id)
+                _notifica(entita, entita_id, testo.strip(), persona)
                 st.rerun()
             else:
                 st.error("Scrivi qualcosa prima di inviare.")
+
+
+def _notifica(entita: str, entita_id, testo: str, autore: Persona) -> None:
+    """E-mail a owner/supervisor (task, deliverable) o responsabile (progetto),
+    escluso l'autore. Mai bloccante: senza SMTP non fa nulla."""
+    try:
+        from src.data import deliverable_repo, iniziativa_repo, persona_repo, task_repo
+        from src.lib.notifiche_app import notifica_commento
+
+        ids: list = []
+        titolo = entita
+        if entita == "task":
+            t = task_repo.get_task(entita_id)
+            if t:
+                ids, titolo = [t.owner_id, t.supervisor_id], t.titolo
+        elif entita == "deliverable":
+            d = deliverable_repo.get_deliverable(entita_id)
+            if d:
+                ids, titolo = [d.owner_id, d.supervisor_id], d.titolo
+        elif entita == "iniziativa":
+            i = iniziativa_repo.get_iniziativa(entita_id)
+            if i:
+                ids, titolo = [i.responsabile_id], i.etichetta
+        persone = [persona_repo.get_persona(x) for x in ids if x]
+        notifica_commento(persone, titolo, autore, testo)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def badge_commenti(n: int) -> str:

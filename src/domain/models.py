@@ -128,6 +128,8 @@ class Iniziativa(BaseModel):
     costo_complessivo: Decimal | None = None
     finanziamento_complessivo: Decimal | None = None
     tipo_ricavo: str = "agevolato"  # agevolato | mercato | ricorrente (v3)
+    monthly_report: bool = False  # richiede il monthly report (v3, §13.10)
+    monthly_report_istruzioni: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

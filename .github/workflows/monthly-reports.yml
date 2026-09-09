@@ -1,0 +1,40 @@
+name: Monthly reports
+
+# Genera il file .md del monthly report (mese precedente) per i progetti che
+# lo richiedono e lo invia via e-mail al responsabile. Gira ogni giorno alle
+# 06:30 UTC: la deduplica è a DB (un record per progetto/mese, notificato una
+# volta), quindi di fatto agisce il primo giorno del mese, o il primo giorno
+# utile se il job era fermo.
+#
+# Secrets richiesti (repo → Settings → Secrets and variables → Actions):
+#   DATABASE_URL, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
+#   APP_URL (opzionale)
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: monthly-reports
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/monthly_reports.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          APP_URL: ${{ secrets.APP_URL }}
