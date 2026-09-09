@@ -17,13 +17,14 @@ Deduplica:
 
 from __future__ import annotations
 
-import html
 import logging
 import os
 import smtplib
 from dataclasses import dataclass
 from datetime import date, timedelta
 from email.message import EmailMessage
+
+from src.lib import email_html as eh
 
 log = logging.getLogger(__name__)
 
@@ -35,9 +36,6 @@ STATO_TXT = {
     "completato": "Completato",
     "annullato": "Annullato",
 }
-BRAND = "#2E8FC0"
-INK = "#0B0F14"
-MUTED = "#45535F"
 
 
 @dataclass(frozen=True)
@@ -147,82 +145,88 @@ def scaduti_ieri(tasks: list[dict], oggi: date) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Rendering (HTML tabellare vecchio stile: Gmail-safe, senza immagini)
+# Rendering (HTML a tabelle e stili inline: Gmail/Outlook-safe; mattoni in
+# src/lib/email_html.py, stessa disciplina di MAIC tasks)
 # ---------------------------------------------------------------------------
 
 
-def _riga(t: dict, oggi: date) -> str:
-    scad = t.get("scadenza")
-    if scad:
-        delta = (scad - oggi).days
-        quando = f"{scad:%d/%m/%Y}" + (
-            f" (in ritardo di {-delta} g)"
-            if delta < 0
-            else (f" (tra {delta} g)" if delta <= 14 else "")
-        )
-    else:
-        quando = "senza scadenza"
-    prog = f" · {html.escape(str(t['progetto']))}" if t.get("progetto") else ""
-    return (
-        f"<tr><td style='padding:4px 8px;border-bottom:1px solid #E1E6EA'>"
-        f"<b>{html.escape(t.get('titolo') or '')}</b>{prog}</td>"
-        f"<td style='padding:4px 8px;border-bottom:1px solid #E1E6EA;color:{MUTED}'>"
-        f"{STATO_TXT.get(t.get('stato'), t.get('stato') or '')}</td>"
-        f"<td style='padding:4px 8px;border-bottom:1px solid #E1E6EA;"
-        f"color:{MUTED}'>{quando}</td></tr>"
-    )
-
-
-def _sezione(titolo: str, righe: list[dict], oggi: date, vuoto: str = "") -> str:
-    if not righe:
-        return (
-            f"<p style='color:{MUTED};margin:12px 0 4px'><b>{titolo}</b> — {vuoto}</p>"
-            if vuoto
-            else ""
-        )
-    corpo = "".join(_riga(t, oggi) for t in righe)
-    return (
-        f"<p style='margin:16px 0 4px'><b style='color:{BRAND}'>{titolo}</b>"
-        f" ({len(righe)})</p>"
-        "<table style='border-collapse:collapse;width:100%;font-size:13px'>"
-        f"{corpo}</table>"
-    )
+def _riga(t: dict) -> dict:
+    """Task (dict dal DB) -> riga per email_html.riga_task."""
+    return {
+        "titolo": t.get("titolo") or "",
+        "stato": t.get("stato"),
+        "scadenza": t.get("scadenza"),
+        "progetto": t.get("progetto"),
+    }
 
 
 def html_briefing(
     nome: str, sezioni: dict, oggi: date, app_url: str
 ) -> tuple[str, str]:
     """(html, testo) del briefing settimanale."""
-    parti = [
-        "<div style='font-family:Segoe UI,Calibri,Arial,sans-serif;"
-        f"color:{INK};max-width:680px'>",
-        f"<h2 style='color:{BRAND};margin:0 0 4px'>Briefing settimanale — "
-        f"{oggi:%d/%m/%Y}</h2>",
-        f"<p>Ciao {html.escape(nome)}, ecco il quadro dei tuoi task.</p>",
-    ]
-    if sezioni["completati"]:
-        parti.append(
-            f"<p style='color:{MUTED}'>Nell'ultima settimana hai completato "
-            f"<b>{len(sezioni['completati'])}</b> task: "
-            + ", ".join(
-                html.escape(t.get("titolo") or "") for t in sezioni["completati"][:6]
-            )
-            + ".</p>"
+    n_comp = len(sezioni["completati"])
+    corpo = eh.paragrafo(
+        f"Ciao <b>{eh.esc(nome)}</b>, ecco il quadro dei tuoi task per la settimana."
+    )
+    corpo += eh.riquadri(
+        [
+            (
+                "scaduti",
+                len(sezioni["scaduti"]),
+                "scaduto" if sezioni["scaduti"] else "ok",
+            ),
+            (
+                "in scadenza",
+                len(sezioni["in_scadenza"]),
+                "in_scadenza" if sezioni["in_scadenza"] else "normale",
+            ),
+            (
+                "da sbloccare",
+                len(sezioni["da_sbloccare"]),
+                "bloccato" if sezioni["da_sbloccare"] else "normale",
+            ),
+            ("attivi", len(sezioni["attivi"]), "info"),
+        ]
+    )
+    if n_comp:
+        corpo += eh.paragrafo(
+            f"Nell'ultima settimana hai completato <b>{n_comp}</b> task: "
+            + ", ".join(eh.esc(t.get("titolo")) for t in sezioni["completati"][:6])
+            + ("…" if n_comp > 6 else "."),
+            size=13,
+            colore=eh.MUTED,
         )
-    parti.append(_sezione("SCADUTI", sezioni["scaduti"], oggi, "nessuno 👍"))
-    parti.append(
-        _sezione("IN SCADENZA ENTRO 14 GIORNI", sezioni["in_scadenza"], oggi, "nessuno")
+    corpo += eh.sezione(
+        "SCADUTI", "scaduto", [_riga(t) for t in sezioni["scaduti"]], oggi
     )
-    parti.append(
-        _sezione("DA SBLOCCARE (sei supervisor)", sezioni["da_sbloccare"], oggi)
+    corpo += eh.sezione(
+        "IN SCADENZA ENTRO 14 GIORNI",
+        "in_scadenza",
+        [_riga(t) for t in sezioni["in_scadenza"]],
+        oggi,
     )
-    parti.append(
-        _sezione("TUTTI I TUOI TASK ATTIVI", sezioni["attivi"], oggi, "nessuno")
+    corpo += eh.sezione(
+        "DA SBLOCCARE (sei supervisor)",
+        "bloccato",
+        [_riga(t) for t in sezioni["da_sbloccare"]],
+        oggi,
     )
-    parti.append(
-        f"<p style='margin-top:20px'><a href='{html.escape(app_url)}' "
-        f"style='color:{BRAND}'>Apri il gestionale</a>"
-        f" · <span style='color:{MUTED}'>ANTECNICA Gestionale</span></p></div>"
+    corpo += eh.sezione(
+        "TUTTI I TUOI TASK ATTIVI", "info", [_riga(t) for t in sezioni["attivi"]], oggi
+    )
+    if not sezioni["attivi"] and not sezioni["da_sbloccare"]:
+        corpo += eh.paragrafo(
+            "Nessun task attivo: buona settimana! 👍", colore=eh.MUTED
+        )
+    corpo_html = eh.cornice(
+        anteprima=(
+            f"{len(sezioni['scaduti'])} scaduti · {len(sezioni['in_scadenza'])} in "
+            f"scadenza · {len(sezioni['attivi'])} attivi"
+        ),
+        titolo=f"Briefing settimanale — {oggi:%d/%m/%Y}",
+        corpo_html=corpo,
+        app_url=app_url,
+        etichetta_bottone="Apri La mia settimana",
     )
     testo = [f"Briefing settimanale {oggi:%d/%m/%Y} — {nome}"]
     for chiave, titolo in (
@@ -239,28 +243,34 @@ def html_briefing(
                 for t in sezioni[chiave]
             ]
     testo.append(f"\n{app_url}")
-    return "".join(parti), "\n".join(testo)
+    return corpo_html, "\n".join(testo)
 
 
 def html_scaduto(nome: str, t: dict, oggi: date, app_url: str) -> tuple[str, str]:
-    corpo = (
-        "<div style='font-family:Segoe UI,Calibri,Arial,sans-serif;"
-        f"color:{INK};max-width:680px'>"
-        f"<h2 style='color:#D9534F;margin:0 0 4px'>Scadenza passata</h2>"
-        f"<p>Ciao {html.escape(nome)}, il task "
-        f"<b>{html.escape(t.get('titolo') or '')}</b>"
-        + (f" ({html.escape(str(t['progetto']))})" if t.get("progetto") else "")
-        + f" era in scadenza il <b>{t['scadenza']:%d/%m/%Y}</b> ed è ancora "
-        + f"«{STATO_TXT.get(t.get('stato'), '')}».</p>"
-        "<p>Aggiorna lo stato o sposta la scadenza: "
-        f"<a href='{html.escape(app_url)}' style='color:{BRAND}'>"
-        "apri il gestionale</a>.</p></div>"
+    """(html, testo) per «scadenza passata ieri»."""
+    corpo = eh.paragrafo(
+        f"Ciao <b>{eh.esc(nome)}</b>, questo task era in scadenza il "
+        f"<b>{eh.fmt_data(t.get('scadenza'))}</b> e risulta ancora aperto."
+    )
+    corpo += eh.sezione("SCADUTO", "scaduto", [_riga(t)], oggi)
+    corpo += eh.paragrafo(
+        "Aggiorna lo stato, sposta la scadenza o segnalo come bloccato "
+        "indicando cosa manca.",
+        size=13,
+        colore=eh.MUTED,
+    )
+    corpo_html = eh.cornice(
+        anteprima=f"Scaduto ieri: {t.get('titolo')}",
+        titolo="Scadenza passata",
+        corpo_html=corpo,
+        app_url=app_url,
+        etichetta_bottone="Apri il task",
     )
     testo = (
         f"Il task '{t.get('titolo')}' era in scadenza il "
-        f"{t['scadenza']:%d/%m/%Y}. {app_url}"
+        f"{eh.fmt_data(t.get('scadenza'))} ed e' ancora aperto. {app_url}"
     )
-    return corpo, testo
+    return corpo_html, testo
 
 
 # ---------------------------------------------------------------------------
@@ -324,62 +334,70 @@ def costruisci_messaggio(
 # ---------------------------------------------------------------------------
 
 
-def _cornice(titolo: str, colore: str, corpo: str, app_url: str, link_txt: str) -> str:
-    return (
-        "<div style='font-family:Segoe UI,Calibri,Arial,sans-serif;"
-        f"color:{INK};max-width:680px'>"
-        f"<h2 style='color:{colore};margin:0 0 4px'>{titolo}</h2>"
-        f"{corpo}"
-        f"<p style='margin-top:20px'><a href='{html.escape(app_url)}' "
-        f"style='color:{BRAND}'>{link_txt}</a>"
-        f" · <span style='color:{MUTED}'>ANTECNICA Gestionale</span></p></div>"
-    )
-
-
 def html_task_assegnato(
     nome: str, t: dict, da_chi: str, app_url: str
 ) -> tuple[str, str]:
     """(html, testo) per «ti è stato assegnato un task»."""
+    oggi = date.today()
+    corpo = eh.paragrafo(
+        f"Ciao <b>{eh.esc(nome)}</b>, <b>{eh.esc(da_chi)}</b> ti ha assegnato un task."
+    )
+    corpo += eh.sezione(
+        "NUOVO TASK",
+        "info",
+        [
+            {
+                "titolo": t.get("titolo"),
+                "stato": t.get("stato") or "da_fare",
+                "scadenza": t.get("scadenza"),
+                "progetto": t.get("progetto"),
+            }
+        ],
+        oggi,
+    )
+    if t.get("descrizione"):
+        corpo += eh.citazione(str(t["descrizione"])[:600])
+    corpo_html = eh.cornice(
+        anteprima=f"{da_chi} ti ha assegnato: {t.get('titolo')}",
+        titolo="Nuovo task assegnato",
+        corpo_html=corpo,
+        app_url=app_url,
+        etichetta_bottone="Apri i miei task",
+    )
     scad = t.get("scadenza")
-    quando = f" con scadenza <b>{scad:%d/%m/%Y}</b>" if scad else ""
-    prog = (
-        f" nel progetto <b>{html.escape(str(t['progetto']))}</b>"
-        if t.get("progetto")
-        else ""
-    )
-    corpo = (
-        f"<p>Ciao {html.escape(nome)}, <b>{html.escape(da_chi)}</b> "
-        "ti ha assegnato il task "
-        f"<b>{html.escape(t.get('titolo') or '')}</b>{prog}{quando}.</p>"
-    )
     testo = (
         f"{da_chi} ti ha assegnato il task '{t.get('titolo')}'"
         + (f" ({t['progetto']})" if t.get("progetto") else "")
-        + (f", scadenza {scad:%d/%m/%Y}" if scad else "")
+        + (f", scadenza {scad:%d/%m/%Y}" if isinstance(scad, date) else "")
         + f". {app_url}"
     )
-    return (
-        _cornice("Nuovo task assegnato", BRAND, corpo, app_url, "Apri il gestionale"),
-        testo,
-    )
+    return corpo_html, testo
 
 
 def html_commento(
     nome: str, titolo_entita: str, autore: str, testo_commento: str, app_url: str
 ) -> tuple[str, str]:
     """(html, testo) per «nuovo commento su …»."""
-    corpo = (
-        f"<p>Ciao {html.escape(nome)}, <b>{html.escape(autore)}</b> ha commentato "
-        f"<b>{html.escape(titolo_entita)}</b>:</p>"
-        f"<blockquote style='border-left:3px solid {BRAND};"
-        "margin:8px 0;padding:4px 12px;"
-        f"color:{MUTED}'>{html.escape(testo_commento)}</blockquote>"
+    corpo = eh.paragrafo(
+        f"Ciao <b>{eh.esc(nome)}</b>, <b>{eh.esc(autore)}</b> ha commentato "
+        f"<b>{eh.esc(titolo_entita)}</b>:"
+    )
+    corpo += eh.citazione(testo_commento)
+    corpo += eh.paragrafo(
+        "Rispondi dal gestionale: il commento resta nella cronaca del task e "
+        "finisce nel monthly report.",
+        size=13,
+        colore=eh.MUTED,
+    )
+    corpo_html = eh.cornice(
+        anteprima=f"{autore}: {testo_commento[:80]}",
+        titolo="Nuovo commento",
+        corpo_html=corpo,
+        app_url=app_url,
+        etichetta_bottone="Rispondi nel gestionale",
     )
     testo = f"{autore} ha commentato '{titolo_entita}': {testo_commento}\n{app_url}"
-    return (
-        _cornice("Nuovo commento", BRAND, corpo, app_url, "Rispondi nel gestionale"),
-        testo,
-    )
+    return corpo_html, testo
 
 
 def html_monthly_pronto(
@@ -402,35 +420,32 @@ def html_monthly_pronto(
         "dicembre",
     ]
     mese_txt = f"{mesi[mese]} {anno}"
-    corpo = (
-        f"<p>Ciao {html.escape(nome)}, è pronto il file per il <b>monthly report di "
-        f"{mese_txt}</b> del progetto <b>{html.escape(etichetta)}</b> (in allegato, "
-        "e scaricabile dalla Dashboard).</p>"
-        "<ol style='color:" + MUTED + "'>"
-        "<li>Apri il file .md e compila la sezione «Note del responsabile».</li>"
-        "<li>Incolla l'intero file in ChatGPT o Claude: produrrà la bozza "
-        "del report.</li>"
-        "<li>Rifinisci la bozza e segna il report come completato nella "
-        "pagina Progetti.</li>"
-        "</ol>"
+    corpo = eh.paragrafo(
+        f"Ciao <b>{eh.esc(nome)}</b>, è pronto il file per il <b>monthly report di "
+        f"{eh.esc(mese_txt)}</b> del progetto {eh.chip_progetto(etichetta)}. "
+        "Lo trovi in allegato e nella Dashboard."
+    )
+    corpo += eh.elenco_passi(
+        [
+            "Apri il file <b>.md</b> e compila la sezione «Note del responsabile».",
+            "Incolla l'intero file in ChatGPT o Claude: produrrà la bozza del report.",
+            "Rifinisci la bozza e segna il report come <b>completato</b> in "
+            "Progetti → Monthly report.",
+        ]
+    )
+    corpo_html = eh.cornice(
+        anteprima=f"Monthly report {etichetta} — {mese_txt}: file pronto",
+        titolo=f"Monthly report {etichetta} — {mese_txt}",
+        corpo_html=corpo,
+        app_url=app_url,
+        etichetta_bottone="Apri la Dashboard",
     )
     testo = (
-        f"E' pronto il file per il monthly report di {mese_txt} "
-        f"del progetto {etichetta} "
-        "(in allegato). Compila le note del responsabile, incollalo in "
-        "ChatGPT/Claude e "
-        f"segna il report come completato nel gestionale. {app_url}"
+        f"E' pronto il file per il monthly report di {mese_txt} del progetto "
+        f"{etichetta} (in allegato). Compila le note del responsabile, incollalo in "
+        f"ChatGPT/Claude e segna il report come completato nel gestionale. {app_url}"
     )
-    return (
-        _cornice(
-            f"Monthly report {etichetta} — {mese_txt}",
-            BRAND,
-            corpo,
-            app_url,
-            "Apri la Dashboard",
-        ),
-        testo,
-    )
+    return corpo_html, testo
 
 
 # ---------------------------------------------------------------------------
