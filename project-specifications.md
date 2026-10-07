@@ -544,3 +544,28 @@ tabella `settings` gestita dal pannello admin. agest aveva solo il cron
   la password SMTP non entra nel DB;
 - restano dal cron: briefing settimanale, avviso scadenza, monthly report.
   Non replicato il sign-off dei deliverable.
+
+### 13.11 Creazione diretta di un progetto (10/2026)
+
+Un progetto può nascere in tre modi: dall'approvazione di una proposta (resta
+il percorso per le candidature, perché permette di pianificare persone e budget
+prima della conversione), dall'import del Libro Cassa e, da ora, direttamente
+dalla pagina **Progetti** con il pulsante **➕ Nuovo progetto** (solo
+amministratore). Il dialog raccoglie titolo (obbligatorio), acronimo,
+identificativo, ente finanziatore, date, finanziamento/costo/budget,
+responsabile, tipo di ricavo, CUP e la spunta «richiede un monthly report», e
+crea un'`iniziativa` con `tipo='progetto'` e `stato='attivo'`.
+
+Validazione (`src/domain/nuovo_progetto.py`, pura e testata): titolo
+obbligatorio, fine non precedente all'inizio, **acronimo non duplicato**
+(è la chiave di riconciliazione dei movimenti bancari, senza vincolo a DB),
+identificativo non duplicato (vincolo `iniziativa_codice_key`).
+
+La scrittura passa da `src/lib/progetti_service.crea_progetto`, che restituisce
+`(progetto, errore)` con l'errore già in italiano (anche per i vincoli del DB,
+via `src/lib/errori.py`): così la logica resta testabile fuori dal dialog.
+
+Limite noto: un progetto creato direttamente non ha assegnazioni, work package
+né voci di budget, perché il builder è nella pagina Proposte e lavora solo su
+`tipo='proposta'`. Senza assegnazioni la persona non ha righe nel timesheet e
+il carico del Portfolio resta a zero.

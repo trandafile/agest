@@ -37,20 +37,115 @@ from src.domain.models import (
 )
 from src.lib.errori import messaggio_errore_db
 from src.lib.labels import etichetta_progetto, getf
+from src.lib.progetti_service import crea_progetto
 from src.ui.commenti_ui import blocco_commenti
 
 persona = require_role(RuoloSistema.admin, RuoloSistema.pm)
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
 economia = vede_economia(persona.ruolo_sistema)
 
-st.title("Progetti")
+
+@st.dialog("Nuovo progetto", width="large")
+def _dialog_nuovo() -> None:
+    """Crea direttamente un progetto attivo (senza passare dalla proposta)."""
+    st.caption(
+        "Per un contratto già firmato o un progetto già in corso. Per una "
+        "candidatura da valutare usa invece Proposte → approvazione: lì puoi "
+        "pianificare persone e budget prima della conversione."
+    )
+    persone_att = persona_repo.list_persone(solo_attivi=True)
+    with st.form("nuovo_progetto"):
+        m1, m2, m3 = st.columns([2, 1, 1])
+        n_tit = m1.text_input("Titolo *", placeholder="es. Cascaded array")
+        n_acr = m2.text_input(
+            "Acronimo",
+            placeholder="es. CASCADE",
+            help="Chiave per riconciliare automaticamente i movimenti bancari.",
+        )
+        n_cod = m3.text_input("Identificativo / Codice", placeholder="es. ESA-1234")
+        m4, m5, m6 = st.columns(3)
+        n_ente = m4.text_input("Ente finanziatore / Cliente", placeholder="es. ESA")
+        n_ini = m5.date_input("Inizio", value=date.today())
+        n_fine = m6.date_input(
+            "Fine",
+            value=None,
+            help="Senza le due date il progetto non compare nel GANTT del Portfolio.",
+        )
+        m7, m8, m9 = st.columns(3)
+        n_fin = m7.number_input(
+            "Finanziamento complessivo €", min_value=0.0, step=1000.0
+        )
+        n_costo = m8.number_input("Costo complessivo €", min_value=0.0, step=1000.0)
+        n_budget = m9.number_input("Budget totale €", min_value=0.0, step=1000.0)
+        m10, m11, m12 = st.columns(3)
+        n_resp = m10.selectbox(
+            "Responsabile (PM)",
+            [None] + persone_att,
+            format_func=lambda x: "—" if x is None else x.nome_completo,
+            help="Riceve l'avviso del monthly report e vede il progetto "
+            "(vista operativa).",
+        )
+        n_ric = m11.selectbox(
+            "Tipo di ricavo",
+            ["agevolato", "mercato", "ricorrente"],
+            help="Per i KPI di sostenibilità.",
+        )
+        n_cup = m12.text_input("CUP", placeholder="(opzionale)")
+        n_mr = st.checkbox(
+            "Richiede un monthly report",
+            help="Le istruzioni per l'assistente si impostano poi nella scheda "
+            "«📆 Monthly report» del progetto.",
+        )
+        if st.form_submit_button("➕ Crea progetto", type="primary"):
+            nuovo, errore = crea_progetto(
+                titolo=n_tit,
+                acronimo=n_acr,
+                codice=n_cod,
+                controparte=n_ente,
+                inizio=n_ini,
+                fine=n_fine,
+                finanziamento=n_fin,
+                costo=n_costo,
+                budget=n_budget,
+                responsabile_id=n_resp.id if n_resp else None,
+                tipo_ricavo=n_ric,
+                cup=n_cup,
+                monthly_report=n_mr,
+            )
+            if errore:
+                st.error(errore)
+            else:
+                st.session_state["_msg_progetti"] = f"Progetto «{nuovo.titolo}» creato."
+                st.rerun()
+
+
+_t1, _t2 = st.columns([5, 1.7], vertical_alignment="center")
+_t1.title("Progetti")
+if is_admin and _t2.button(
+    "➕ Nuovo progetto",
+    type="primary",
+    use_container_width=True,
+    help="Crea direttamente un progetto attivo, senza passare dalle proposte.",
+    key="btn_nuovo_progetto",
+):
+    _dialog_nuovo()
 
 progetti = iniziativa_repo.list_iniziative(tipo="progetto")
 if not is_admin:
     progetti = [p for p in progetti if p.responsabile_id == persona.id]
 
 if not progetti:
-    st.info("Nessun progetto. I progetti nascono dall'approvazione delle proposte.")
+    st.info(
+        "Nessun progetto. "
+        + (
+            "Creane uno con «➕ Nuovo progetto», oppure approva una proposta."
+            if is_admin
+            else "Compaiono qui i progetti di cui sei responsabile."
+        )
+    )
+    _msg_vuoto = st.session_state.pop("_msg_progetti", None)
+    if _msg_vuoto:
+        st.success(_msg_vuoto)
     st.stop()
 
 # --- Elenco progetti con azioni per riga --------------------------------------
