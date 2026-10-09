@@ -37,7 +37,8 @@ from src.domain.models import (
 )
 from src.domain.portfolio import riconcilia_finanziamento
 from src.lib.errori import messaggio_errore_db
-from src.lib.labels import etichetta_progetto, getf
+from src.lib.labels import etichetta_movimento, etichetta_progetto, getf
+from src.lib.milestone_service import aggiungi_incasso, collega, crea_milestone
 from src.lib.progetti_service import crea_progetto
 from src.ui.commenti_ui import blocco_commenti
 
@@ -538,6 +539,13 @@ if economia:
 
         st.divider()
         st.markdown("**Calendario movimenti previsti** (flussi attesi del progetto)")
+        ms_prog = progetti_repo.list_milestones(sel.id)
+        if is_admin:
+            st.caption(
+                "Ogni movimento può essere collegato a una milestone (menu «🎯»): "
+                "il collegamento è facoltativo, un incasso può esistere anche "
+                "senza milestone."
+            )
         previsti = finanza_repo.list_movimenti_previsti(sel.id)
         if previsti:
             tot_e = sum(
@@ -581,7 +589,7 @@ if economia:
             if _ric["esito"] in ("netto", "diverso"):
                 st.warning(_ric["messaggio"])
             for p in previsti:
-                c1, c2, c3 = st.columns([5, 1.4, 1.1])
+                c1, c2, c3, c4 = st.columns([4.1, 2.4, 1.4, 0.8])
                 segno_ic = "🟢" if p["segno"] == "entrata" else "🔴"
                 quando = f"{p['data_attesa']:%d/%m/%Y}" if p["data_attesa"] else "—"
                 imp = f"{float(p['importo']):,.2f}"
@@ -589,27 +597,64 @@ if economia:
                     f"{segno_ic} {p['descrizione'] or '—'} · **{imp} €** · 📅 {quando}"
                 )
                 if is_admin:
-                    fatto = c2.checkbox(
+                    idx_ms = next(
+                        (
+                            i + 1
+                            for i, m in enumerate(ms_prog)
+                            if m.id == p.get("milestone_id")
+                        ),
+                        0,
+                    )
+                    scelta_ms = c2.selectbox(
+                        "Milestone collegata",
+                        [None] + ms_prog,
+                        index=idx_ms,
+                        format_func=lambda m: (
+                            "— nessuna milestone —" if m is None else f"🎯 {m.titolo}"
+                        ),
+                        key=f"pvms_{p['id']}",
+                        label_visibility="collapsed",
+                        help="Facoltativo: milestone da cui dipende questo movimento.",
+                    )
+                    nuovo_ms = scelta_ms.id if scelta_ms else None
+                    if nuovo_ms != p.get("milestone_id"):
+                        collega(p["id"], nuovo_ms)
+                        st.rerun()
+                    fatto = c3.checkbox(
                         "completata", value=p["completata"], key=f"pv_{p['id']}"
                     )
                     if fatto != p["completata"]:
                         finanza_repo.toggle_previsto_completato(p["id"], fatto)
                         st.rerun()
-                    if c3.button("🗑", key=f"pvdel_{p['id']}"):
+                    if c4.button("🗑", key=f"pvdel_{p['id']}"):
                         finanza_repo.delete_movimento_previsto(p["id"])
                         st.rerun()
                 else:
-                    c2.markdown("✅" if p["completata"] else "⏳")
+                    c2.markdown(
+                        f"🎯 {p['milestone_titolo']}"
+                        if p.get("milestone_titolo")
+                        else "—"
+                    )
+                    c3.markdown("✅" if p["completata"] else "⏳")
         else:
             st.info("Nessun movimento previsto per questo progetto.")
 
         if is_admin:
             with st.form("nuovo_previsto", clear_on_submit=True):
-                n1, n2, n3, n4 = st.columns([3, 1, 1, 1.3])
+                n1, n2, n3, n4, n5 = st.columns([2.6, 1, 1, 1.3, 2])
                 pv_desc = n1.text_input("Descrizione")
                 pv_segno = n2.selectbox("Tipo", ["entrata", "uscita"])
                 pv_imp = n3.number_input("Importo €", min_value=0.0, step=100.0)
                 pv_data = n4.date_input("Data attesa", value=None)
+                pv_ms = n5.selectbox(
+                    "Milestone (opz.)",
+                    [None] + ms_prog,
+                    format_func=lambda m: (
+                        "— nessuna —" if m is None else f"🎯 {m.titolo}"
+                    ),
+                    help="Facoltativa. Se scelta e la data è vuota, usa la data della "
+                    "milestone.",
+                )
                 if (
                     st.form_submit_button("➕ Aggiungi movimento previsto")
                     and pv_imp > 0
@@ -619,7 +664,8 @@ if economia:
                         segno=pv_segno,
                         importo=pv_imp,
                         descrizione=pv_desc or None,
-                        data_attesa=pv_data,
+                        data_attesa=pv_data or (pv_ms.data_prevista if pv_ms else None),
+                        milestone_id=pv_ms.id if pv_ms else None,
                     )
                     st.rerun()
 
@@ -727,28 +773,47 @@ if economia:
 
 with tab_ms:
     ms = progetti_repo.list_milestones(sel.id)
+    mov_ms = finanza_repo.movimenti_per_milestone(sel.id) if economia else {}
     if is_admin:
         with st.form("nuova_ms", clear_on_submit=True):
-            f1, f2, f3 = st.columns(3)
+            f1, f2 = st.columns([3, 1.4])
             titolo = f1.text_input("Titolo *")
             quando = f2.date_input("Data prevista", value=date.today())
-            incasso = f3.number_input("Incasso previsto €", min_value=0.0, step=500.0)
-            genera_pag = st.checkbox(
-                "💰 Milestone di pagamento (determina un incasso previsto)",
+            determina = st.checkbox(
+                "💰 Questa milestone determina un incasso",
                 value=False,
-                help="Se attiva, l'incasso entra nella proiezione di cassa.",
+                help="Facoltativo. Se la spunti, indica importo e data: l'incasso "
+                "entra nel calendario dei movimenti previsti, collegato alla "
+                "milestone. Puoi anche aggiungerne o collegarne altri dopo; una "
+                "milestone può non avere nessun incasso.",
             )
-            if st.form_submit_button("Aggiungi milestone") and titolo:
-                progetti_repo.create_milestone(
-                    sel.id,
-                    titolo,
-                    quando,
-                    incasso or None,
-                    genera_pagamento=genera_pag,
-                )
-                st.rerun()
+            i1, i2 = st.columns(2)
+            incasso = i1.number_input(
+                "Importo dell'incasso € (se spuntato)", min_value=0.0, step=500.0
+            )
+            data_inc = i2.date_input(
+                "Data dell'incasso (vuota = data della milestone)", value=None
+            )
+            if st.form_submit_button("Aggiungi milestone"):
+                if not titolo.strip():
+                    st.error("Il titolo è obbligatorio.")
+                elif determina and incasso <= 0:
+                    st.error("Hai spuntato «determina un incasso»: indica l'importo.")
+                else:
+                    crea_milestone(
+                        sel.id,
+                        titolo.strip(),
+                        quando,
+                        incasso if determina else None,
+                        data_inc,
+                    )
+                    st.rerun()
     if ms:
         icone = {"prevista": "⏳", "completata": "✅", "slittata": "🔶"}
+
+        def _incassi(m) -> list[dict]:
+            return [x for x in mov_ms.get(str(m.id), []) if x["segno"] == "entrata"]
+
         st.dataframe(
             pd.DataFrame(
                 [
@@ -758,7 +823,12 @@ with tab_ms:
                             f"{m.data_prevista:%d/%m/%Y}" if m.data_prevista else ""
                         ),
                         **(
-                            {"Incasso €": float(m.importo_incasso or 0) or None}
+                            {
+                                "Incasso collegato €": (
+                                    float(sum(x["importo"] for x in _incassi(m)))
+                                    or None
+                                )
+                            }
                             if economia
                             else {}
                         ),
@@ -771,14 +841,23 @@ with tab_ms:
             hide_index=True,
             use_container_width=True,
         )
-        incassi_previsti = sum(float(m.importo_incasso or 0) for m in ms)
-        incassi_maturati = sum(
-            float(m.importo_incasso or 0) for m in ms if m.stato == "completata"
-        )
         if economia:
+            tot_coll = sum(
+                (Decimal(x["importo"]) for m in ms for x in _incassi(m)), Decimal("0")
+            )
+            tot_fatti = sum(
+                (
+                    Decimal(x["importo"])
+                    for m in ms
+                    for x in _incassi(m)
+                    if x["completata"]
+                ),
+                Decimal("0"),
+            )
             st.caption(
-                f"Incassi previsti da milestone: **{incassi_previsti:,.2f} €**, "
-                f"maturati (completate): **{incassi_maturati:,.2f} €**"
+                f"Incassi collegati alle milestone: **{tot_coll:,.2f} €**, di cui già "
+                f"incassati: **{tot_fatti:,.2f} €**. I movimenti senza milestone sono "
+                "nella scheda «Flussi finanziari»."
             )
         if is_admin:
             m_sel = st.selectbox(
@@ -799,6 +878,68 @@ with tab_ms:
                 if gc2.button("🗑 Elimina milestone", type="secondary"):
                     progetti_repo.delete_milestone(m_sel.id)
                     st.rerun()
+                gc2.caption(
+                    "Gli incassi collegati restano nel calendario, senza milestone."
+                )
+
+                # incassi e pagamenti collegati (collegamento esplicito, facoltativo)
+                st.markdown("**💰 Incassi e pagamenti collegati**")
+                collegati = mov_ms.get(str(m_sel.id), [])
+                if collegati:
+                    for x in collegati:
+                        k1, k2 = st.columns([6, 1.4])
+                        k1.markdown(etichetta_movimento(x))
+                        if k2.button("Scollega", key=f"msun_{x['id']}"):
+                            collega(x["id"], None)
+                            st.rerun()
+                else:
+                    st.caption(
+                        "Nessun incasso collegato: questa milestone non determina "
+                        "pagamenti (va bene così)."
+                    )
+                liberi = [
+                    x
+                    for x in finanza_repo.list_movimenti_previsti(sel.id)
+                    if not x.get("milestone_id")
+                ]
+                if liberi:
+                    l1, l2 = st.columns([5, 1.6])
+                    scelto = l1.selectbox(
+                        "Collega un movimento già presente nel calendario",
+                        [None] + liberi,
+                        format_func=lambda x: (
+                            "— scegli —" if x is None else etichetta_movimento(x)
+                        ),
+                        key=f"msln_{m_sel.id}",
+                    )
+                    if l2.button(
+                        "Collega",
+                        key=f"mslnb_{m_sel.id}",
+                        disabled=scelto is None,
+                        use_container_width=True,
+                    ):
+                        collega(scelto["id"], m_sel.id)
+                        st.rerun()
+                with st.expander(
+                    "➕ Aggiungi un incasso o un pagamento a questa milestone"
+                ):
+                    with st.form(f"msadd_{m_sel.id}", clear_on_submit=True):
+                        a1, a2, a3 = st.columns([1, 1, 1.4])
+                        a_segno = a1.selectbox("Tipo", ["entrata", "uscita"])
+                        a_imp = a2.number_input("Importo €", min_value=0.0, step=500.0)
+                        a_data = a3.date_input(
+                            "Data attesa (vuota = data della milestone)", value=None
+                        )
+                        a_desc = st.text_input("Descrizione (opz.)")
+                        if st.form_submit_button("Aggiungi") and a_imp > 0:
+                            aggiungi_incasso(
+                                m_sel,
+                                a_imp,
+                                a_data,
+                                a_desc or None,
+                                segno=a_segno,
+                            )
+                            st.rerun()
 
                 # associazione deliverable del progetto alla milestone
                 delivs = deliverable_repo.list_deliverables(sel.id)

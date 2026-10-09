@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from src.lib.labels import contratto_descr, etichetta_progetto, getf
+from src.lib.labels import (
+    contratto_descr,
+    etichetta_movimento,
+    etichetta_progetto,
+    getf,
+)
 
 
 class _Vecchio:
@@ -64,3 +69,16 @@ def test_contratto_descr_solo_inizio():
         contratto_data_fine = None
 
     assert contratto_descr(P()) == "Tempo indeterminato (dal 01/03/2025)"
+
+
+def test_etichetta_movimento():
+    m = {
+        "segno": "entrata",
+        "importo": 400000,
+        "data_attesa": date(2026, 10, 31),
+        "descrizione": "Advanced Payment",
+        "completata": True,
+    }
+    assert etichetta_movimento(m) == "🟢 400.000 € · 31/10/2026 · Advanced Payment ✅"
+    u = {"segno": "uscita", "importo": 50000, "data_attesa": None, "descrizione": None}
+    assert etichetta_movimento(u) == "🔴 50.000 € · senza data · —"

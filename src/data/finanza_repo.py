@@ -110,13 +110,12 @@ def uscite_per_categoria(anno: int) -> list[dict]:
 
 
 def entrate_programmate_mensili() -> list[dict]:
-    """Incassi attesi per mese: documenti attivi aperti + milestone previste.
+    """Incassi attesi per mese dai documenti fiscali attivi ancora aperti.
 
-    Una milestone di pagamento che compare anche nel calendario dei movimenti
-    previsti (stessa iniziativa, stesso importo, stesso mese) è la STESSA
-    informazione inserita due volte: qui viene esclusa, perché il calendario è
-    sommato a parte da `previsti_programmati_mensili` (altrimenti l'incasso
-    sarebbe contato due volte nella proiezione di cassa).
+    Gli incassi legati a milestone o a contratti NON sono qui: stanno nel
+    calendario dei movimenti previsti (`previsti_programmati_mensili`), dove una
+    milestone può avere uno o più incassi collegati (`milestone_id`). Una sola
+    fonte per gli incassi di progetto = nessun doppio conteggio.
     """
     return db.query("""
         select extract(year from scad)::int as anno,
@@ -125,19 +124,6 @@ def entrate_programmate_mensili() -> list[dict]:
             select coalesce(data_scadenza, data) as scad, importo
             from documento_fiscale
             where tipo = 'attiva' and stato_incasso_pagamento <> 'saldato'
-            union all
-            select m.data_prevista, m.importo_incasso
-            from milestone m
-            where m.stato = 'prevista' and m.genera_pagamento
-              and m.importo_incasso is not null and m.data_prevista is not null
-              and not exists (
-                  select 1 from movimento_previsto p
-                  where p.iniziativa_id = m.iniziativa_id
-                    and p.segno = 'entrata'
-                    and p.importo = m.importo_incasso
-                    and date_trunc('month', p.data_attesa)
-                        = date_trunc('month', m.data_prevista)
-              )
         ) x
         where scad >= date_trunc('month', now())
         group by 1, 2 order by 1, 2
@@ -380,10 +366,37 @@ def audit_recenti(limite: int = 200) -> list[dict]:
 
 
 def list_movimenti_previsti(iniziativa_id: UUID | str) -> list[dict]:
+    """Calendario dei movimenti previsti, con titolo della milestone collegata
+    (`milestone_id` / `milestone_titolo`, entrambi None se non collegato)."""
     return db.query(
-        "select * from movimento_previsto where iniziativa_id = %s "
-        "order by data_attesa nulls last",
+        """
+        select p.*, m.titolo as milestone_titolo
+        from movimento_previsto p
+        left join milestone m on m.id = p.milestone_id
+        where p.iniziativa_id = %s
+        order by p.data_attesa nulls last, p.segno desc, p.created_at
+        """,
         (str(iniziativa_id),),
+    )
+
+
+def movimenti_per_milestone(iniziativa_id: UUID | str) -> dict[str, list[dict]]:
+    """{milestone_id: [movimenti collegati]} per le milestone del progetto."""
+    out: dict[str, list[dict]] = {}
+    for r in list_movimenti_previsti(iniziativa_id):
+        if r.get("milestone_id"):
+            out.setdefault(str(r["milestone_id"]), []).append(r)
+    return out
+
+
+def collega_movimento_milestone(
+    mov_id: UUID | str, milestone_id: UUID | str | None
+) -> None:
+    """Collega (o, con None, scollega) un movimento previsto a una milestone.
+    Il collegamento è sempre facoltativo da entrambi i lati."""
+    db.execute(
+        "update movimento_previsto set milestone_id = %s where id = %s",
+        (str(milestone_id) if milestone_id else None, str(mov_id)),
     )
 
 
@@ -394,14 +407,24 @@ def create_movimento_previsto(
     descrizione: str | None = None,
     data_attesa: date | None = None,
     completata: bool = False,
+    milestone_id: UUID | str | None = None,
 ) -> None:
     db.execute(
         """
         insert into movimento_previsto
-            (iniziativa_id, segno, importo, descrizione, data_attesa, completata)
-        values (%s, %s, %s, %s, %s, %s)
+            (iniziativa_id, segno, importo, descrizione, data_attesa, completata,
+             milestone_id)
+        values (%s, %s, %s, %s, %s, %s, %s)
         """,
-        (str(iniziativa_id), segno, importo, descrizione, data_attesa, completata),
+        (
+            str(iniziativa_id),
+            segno,
+            importo,
+            descrizione,
+            data_attesa,
+            completata,
+            str(milestone_id) if milestone_id else None,
+        ),
     )
 
 

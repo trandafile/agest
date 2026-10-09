@@ -604,3 +604,45 @@ correzioni:
 Convenzione dati: `finanziamento_complessivo` = totale lordo degli incassi
 previsti del contratto; le quote da girare ai partner stanno nelle uscite del
 calendario.
+
+### 13.13 Milestone e incassi: collegamento esplicito e facoltativo (10/2026)
+
+Prima la milestone portava con sé un'etichetta «di pagamento» e un importo
+propri, separati dal calendario dei movimenti previsti: lo stesso incasso
+poteva essere inserito due volte e il legame veniva solo dedotto. Ora il
+collegamento è un dato esplicito, **facoltativo da entrambi i lati**:
+
+- una milestone **può** determinare uno o più incassi (o pagamenti), **può**
+  non determinarne nessuno;
+- un incasso o una uscita del calendario **può** dipendere da una milestone,
+  **può** non averne nessuna (es. anticipo contrattuale).
+
+Dati (migrazione 0018): `movimento_previsto.milestone_id` (nullable, `on delete
+set null`: eliminare una milestone non cancella gli incassi, che restano senza
+milestone). `milestone.genera_pagamento` e `importo_incasso` sono ora
+**derivati** dagli incassi (segno entrata) collegati e li allinea un trigger,
+così calendario, report e presentazioni continuano a leggerli. La migrazione
+ha collegato i movimenti esistenti alle milestone di pagamento corrispondenti
+(stesso progetto, importo e mese; per Multiplexer MS1–MS4) e creato il
+movimento per le milestone di pagamento che non l'avevano.
+
+Cassa: `entrate_programmate_mensili` legge solo i documenti fiscali aperti; gli
+incassi di progetto vengono unicamente dal calendario
+(`previsti_programmati_mensili`): una sola fonte, nessun doppio conteggio e
+nessuna euristica sugli importi.
+
+Interfaccia (pagina Progetti, solo amministratore):
+- **Milestone → nuova**: casella «💰 Questa milestone determina un incasso» con
+  importo e data dell'incasso (vuota = data della milestone); senza la
+  casella la milestone nasce senza incassi.
+- **Milestone → Gestisci**: elenco degli incassi collegati con «Scollega»,
+  menu «Collega un movimento già presente nel calendario» e riquadro «➕
+  Aggiungi un incasso o un pagamento a questa milestone» (anche più incassi
+  per la stessa milestone).
+- **Flussi finanziari**: ogni riga ha il menu «🎯 milestone collegata»
+  (modificabile al volo, «— nessuna milestone —» di default) e il modulo di
+  inserimento ha il campo «Milestone (opz.)», che usa la data della milestone
+  se la data attesa è vuota.
+
+Logica in `src/lib/milestone_service.py` (`crea_milestone`, `aggiungi_incasso`,
+`collega`) e `finanza_repo.collega_movimento_milestone`.

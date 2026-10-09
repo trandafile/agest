@@ -66,3 +66,14 @@ def contratto_descr(p: Any) -> str:
     if da:
         return f"{base} (dal {da:%d/%m/%Y})"
     return base
+
+
+def etichetta_movimento(m: dict) -> str:
+    """Riga leggibile di un movimento previsto, per menu e elenchi:
+    «🟢 400.000 € · 31/10/2026 · Advanced Payment ✅»."""
+    icona = "🟢" if m.get("segno") == "entrata" else "🔴"
+    importo = f"{float(m.get('importo') or 0):,.0f}".replace(",", ".")
+    quando = m.get("data_attesa")
+    data = f"{quando:%d/%m/%Y}" if quando else "senza data"
+    fatto = " ✅" if m.get("completata") else ""
+    return f"{icona} {importo} € · {data} · {m.get('descrizione') or '—'}{fatto}"
