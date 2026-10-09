@@ -35,6 +35,7 @@ from src.domain.models import (
     STATO_RIMBORSO_BADGE,
     RuoloSistema,
 )
+from src.domain.portfolio import riconcilia_finanziamento
 from src.lib.errori import messaggio_errore_db
 from src.lib.labels import etichetta_progetto, getf
 from src.lib.progetti_service import crea_progetto
@@ -553,6 +554,32 @@ if economia:
                 f"Da incassare: **{tot_e:,.2f} €** · da pagare: **{tot_u:,.2f} €** "
                 "(voci non completate)"
             )
+            _ent_tot = sum(
+                (Decimal(p["importo"]) for p in previsti if p["segno"] == "entrata"),
+                Decimal("0"),
+            )
+            _usc_tot = sum(
+                (Decimal(p["importo"]) for p in previsti if p["segno"] == "uscita"),
+                Decimal("0"),
+            )
+            _ent_fatti = sum(
+                (
+                    Decimal(p["importo"])
+                    for p in previsti
+                    if p["segno"] == "entrata" and p["completata"]
+                ),
+                Decimal("0"),
+            )
+            st.caption(
+                f"Calendario completo: incassi **{_ent_tot:,.2f} €** (già "
+                f"incassati {_ent_fatti:,.2f} €) · uscite **{_usc_tot:,.2f} €** · "
+                f"netto **{_ent_tot - _usc_tot:,.2f} €**"
+            )
+            _ric = riconcilia_finanziamento(
+                getf(sel, "finanziamento_complessivo"), _ent_tot, _usc_tot
+            )
+            if _ric["esito"] in ("netto", "diverso"):
+                st.warning(_ric["messaggio"])
             for p in previsti:
                 c1, c2, c3 = st.columns([5, 1.4, 1.1])
                 segno_ic = "🟢" if p["segno"] == "entrata" else "🔴"

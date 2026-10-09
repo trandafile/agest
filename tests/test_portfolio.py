@@ -13,7 +13,9 @@ from src.domain.portfolio import (
     giorni_per_anno,
     quota_per_anno,
     quota_per_mese,
+    ricavi_da_calendario,
     ricavi_per_anno,
+    riconcilia_finanziamento,
     tabella_saturazione,
 )
 
@@ -226,3 +228,142 @@ def test_anni_portfolio_include_anno_corrente():
     )
     assert anni == [2023, 2024, 2025, 2026]
     assert anni_portfolio([], oggi=date(2026, 1, 1)) == [2026]
+
+
+def _flussi():
+    d = date
+    return [
+        {
+            "iniziativa_id": "m",
+            "segno": "uscita",
+            "importo": Decimal("100000"),
+            "data_attesa": d(2026, 10, 31),
+        },
+        {
+            "iniziativa_id": "m",
+            "segno": "entrata",
+            "importo": Decimal("400000"),
+            "data_attesa": d(2026, 10, 31),
+        },
+        {
+            "iniziativa_id": "m",
+            "segno": "entrata",
+            "importo": Decimal("148000"),
+            "data_attesa": d(2027, 1, 30),
+        },
+        {
+            "iniziativa_id": "m",
+            "segno": "uscita",
+            "importo": Decimal("50000"),
+            "data_attesa": d(2027, 1, 30),
+        },
+        {
+            "iniziativa_id": "m",
+            "segno": "entrata",
+            "importo": Decimal("230624"),
+            "data_attesa": d(2028, 9, 30),
+        },
+        {
+            "iniziativa_id": "m",
+            "segno": "uscita",
+            "importo": Decimal("126797"),
+            "data_attesa": d(2028, 9, 30),
+        },
+        {
+            "iniziativa_id": "solo_uscite",
+            "segno": "uscita",
+            "importo": Decimal("10"),
+            "data_attesa": d(2027, 1, 1),
+        },
+        {
+            "iniziativa_id": "x",
+            "segno": "entrata",
+            "importo": Decimal("500"),
+            "data_attesa": None,
+        },
+    ]
+
+
+def test_ricavi_da_calendario_lordo_e_netto():
+    lordo, senza = ricavi_da_calendario(_flussi())
+    assert lordo["m"] == {
+        2026: Decimal("400000"),
+        2027: Decimal("148000"),
+        2028: Decimal("230624"),
+    }
+    assert sum(lordo["m"].values()) == Decimal("778624")
+    assert "solo_uscite" not in lordo  # senza incassi non è «con calendario»
+    assert senza == {"x": Decimal("500")}
+    netto, _ = ricavi_da_calendario(_flussi(), netto=True)
+    assert netto["m"] == {
+        2026: Decimal("300000"),
+        2027: Decimal("98000"),
+        2028: Decimal("103827"),
+    }
+
+
+def test_ricavi_per_anno_usa_il_calendario_quando_c_e():
+    ini = [
+        {
+            "id": "m",
+            "etichetta": "MUX",
+            "tipo": "progetto",
+            "stato": "attivo",
+            "importo": Decimal("768827"),
+            "data_inizio": date(2026, 10, 31),
+            "data_fine": date(2028, 10, 31),
+        },
+        {
+            "id": "u",
+            "etichetta": "UNI",
+            "tipo": "progetto",
+            "stato": "attivo",
+            "importo": Decimal("1000"),
+            "data_inizio": date(2026, 1, 1),
+            "data_fine": date(2026, 12, 31),
+        },
+    ]
+    cal, _ = ricavi_da_calendario(_flussi())
+    righe = ricavi_per_anno(ini, calendario=cal)
+    mux = {r["anno"]: r for r in righe if r["iniziativa_id"] == "m"}
+    assert (
+        mux[2026]["importo"] == Decimal("400000.00")
+        and mux[2026]["base"] == "calendario"
+    )
+    uni = [r for r in righe if r["iniziativa_id"] == "u"]
+    assert uni[0]["base"] == "uniforme" and uni[0]["importo"] == Decimal("1000.00")
+    # senza calendario tutto torna come prima (pro-rata)
+    assert {r["base"] for r in ricavi_per_anno(ini)} == {"uniforme"}
+
+
+def test_ricavi_calendario_proposte_pesate():
+    ini = [
+        {
+            "id": "p",
+            "etichetta": "P",
+            "tipo": "proposta",
+            "stato": "inviata",
+            "importo": Decimal("0"),
+            "probabilita": Decimal("0.5"),
+        }
+    ]
+    cal = {"p": {2027: Decimal("1000")}}
+    r = ricavi_per_anno(ini, calendario=cal)[0]
+    assert r["importo"] == Decimal("500.00") and r["importo_pieno"] == Decimal("1000")
+
+
+def test_riconcilia_il_caso_multiplexer():
+    # finanziamento 768.827 = incassi 1.145.624 − uscite 376.797
+    e = riconcilia_finanziamento(768827, 1145624, 376797)
+    assert e["esito"] == "netto" and e["netto"] == Decimal("768827")
+    assert "NETTO" in e["messaggio"] and "1.145.624" in e["messaggio"]
+
+
+def test_riconcilia_altri_esiti():
+    assert riconcilia_finanziamento(675000, 675000, 75000)["esito"] == "coerente"
+    assert (
+        riconcilia_finanziamento(675000, 675000.5, 0)["esito"] == "coerente"
+    )  # tolleranza
+    assert riconcilia_finanziamento(100, 500, 50)["esito"] == "diverso"
+    assert riconcilia_finanziamento(None, 500, 0)["esito"] == "nd"
+    assert riconcilia_finanziamento(500, 0, 0)["esito"] == "nd"

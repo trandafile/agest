@@ -110,7 +110,14 @@ def uscite_per_categoria(anno: int) -> list[dict]:
 
 
 def entrate_programmate_mensili() -> list[dict]:
-    """Incassi attesi per mese: documenti attivi aperti + milestone previste."""
+    """Incassi attesi per mese: documenti attivi aperti + milestone previste.
+
+    Una milestone di pagamento che compare anche nel calendario dei movimenti
+    previsti (stessa iniziativa, stesso importo, stesso mese) è la STESSA
+    informazione inserita due volte: qui viene esclusa, perché il calendario è
+    sommato a parte da `previsti_programmati_mensili` (altrimenti l'incasso
+    sarebbe contato due volte nella proiezione di cassa).
+    """
     return db.query("""
         select extract(year from scad)::int as anno,
                extract(month from scad)::int as mese, sum(importo) as tot
@@ -119,10 +126,18 @@ def entrate_programmate_mensili() -> list[dict]:
             from documento_fiscale
             where tipo = 'attiva' and stato_incasso_pagamento <> 'saldato'
             union all
-            select data_prevista, importo_incasso
-            from milestone
-            where stato = 'prevista' and genera_pagamento
-              and importo_incasso is not null and data_prevista is not null
+            select m.data_prevista, m.importo_incasso
+            from milestone m
+            where m.stato = 'prevista' and m.genera_pagamento
+              and m.importo_incasso is not null and m.data_prevista is not null
+              and not exists (
+                  select 1 from movimento_previsto p
+                  where p.iniziativa_id = m.iniziativa_id
+                    and p.segno = 'entrata'
+                    and p.importo = m.importo_incasso
+                    and date_trunc('month', p.data_attesa)
+                        = date_trunc('month', m.data_prevista)
+              )
         ) x
         where scad >= date_trunc('month', now())
         group by 1, 2 order by 1, 2

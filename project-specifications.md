@@ -569,3 +569,38 @@ Limite noto: un progetto creato direttamente non ha assegnazioni, work package
 né voci di budget, perché il builder è nella pagina Proposte e lavora solo su
 `tipo='proposta'`. Senza assegnazioni la persona non ha righe nel timesheet e
 il carico del Portfolio resta a zero.
+
+### 13.12 Coerenza fra finanziamento, calendario dei flussi e cassa (10/2026)
+
+Segnalata una discrepanza fra il Portfolio («Ricavi attesi per anno») e la
+scheda «Flussi finanziari» di Progetti per il progetto Multiplexer. Cause e
+correzioni:
+
+1. **Doppio conteggio nella proiezione di cassa (errore).** Se un incasso era
+   inserito sia come milestone di pagamento sia nel calendario dei movimenti
+   previsti, `finanza_repo.entrate_programmate_mensili` (documenti aperti +
+   milestone) e `previsti_programmati_mensili` (calendario) lo sommavano due
+   volte, in Finanza e in Sostenibilità: per Multiplexer 745.624 € di incassi
+   fantasma. Ora una milestone di pagamento è esclusa se nello stesso
+   progetto esiste un incasso del calendario con lo stesso importo nello
+   stesso mese (anche se già segnato «completata»).
+2. **Portfolio: base di calcolo.** Prima il finanziamento era sempre spalmato
+   in modo uniforme sui giorni di durata, ignorando le date degli incassi.
+   Ora `ricavi_per_anno` usa, per ogni iniziativa che ha un calendario, gli
+   **incassi nelle date attese** (`ricavi_da_calendario`: stessi importi della
+   scheda del progetto, già incassati inclusi); per le iniziative senza
+   calendario resta la distribuzione uniforme. Selettore «Base di calcolo» e
+   opzione «al netto delle uscite previste» (quote ai partner e fornitori);
+   la didascalia indica quante iniziative usano l'una o l'altra base e un
+   avviso elenca i movimenti previsti senza data.
+3. **Riconciliazione visibile** (`riconcilia_finanziamento`). La scheda
+   «Flussi finanziari» mostra incassi, già incassati, uscite e netto del
+   calendario e avvisa se il «Finanziamento complessivo» non coincide;
+   il Portfolio raccoglie gli stessi avvisi in un riquadro. Esiti: coerente
+   (finanziamento = incassi lordi, convenzione dei progetti importati dal Libro
+   Cassa), «netto» (finanziamento = incassi − uscite, il caso Multiplexer:
+   1.145.624 − 376.797 = 768.827) e «diverso».
+
+Convenzione dati: `finanziamento_complessivo` = totale lordo degli incassi
+previsti del contratto; le quote da girare ai partner stanno nelle uscite del
+calendario.

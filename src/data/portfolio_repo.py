@@ -122,3 +122,22 @@ def ore_consuntivo_per_anno() -> dict[tuple[str, str, int], Decimal]:
         )
         for r in rows
     }
+
+
+def flussi_previsti() -> list[dict]:
+    """Tutti i movimenti previsti (anche già completati) di ogni iniziativa:
+    base del calendario degli incassi per anno e della riconciliazione col
+    finanziamento complessivo."""
+    return [
+        {
+            "iniziativa_id": str(r["iniziativa_id"]),
+            "segno": r["segno"],
+            "importo": Decimal(r["importo"]),
+            "data_attesa": r["data_attesa"],
+            "completata": r["completata"],
+        }
+        for r in db.query(
+            "select iniziativa_id, segno, importo, data_attesa, completata "
+            "from movimento_previsto"
+        )
+    ]

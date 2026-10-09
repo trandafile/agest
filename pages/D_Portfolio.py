@@ -22,7 +22,9 @@ from src.domain.portfolio import (
     anni_portfolio,
     carico_per_anno,
     quota_per_anno,
+    ricavi_da_calendario,
     ricavi_per_anno,
+    riconcilia_finanziamento,
     tabella_saturazione,
 )
 from src.lib.labels import etichetta_progetto, getf
@@ -190,7 +192,30 @@ st.plotly_chart(fig, use_container_width=True)
 # --- Ricavi attesi per anno (solo amministratore) -------------------------------
 if is_admin:
     st.subheader("Ricavi attesi per anno")
+    r1, r2 = st.columns([3, 2])
+    base_calendario = r1.radio(
+        "Base di calcolo",
+        ["Calendario degli incassi", "Distribuzione uniforme nel tempo"],
+        horizontal=True,
+        help=(
+            "Calendario: gli incassi nelle date attese della scheda «Flussi "
+            "finanziari» di ciascun progetto (stessi importi di Progetti). "
+            "Uniforme: il finanziamento complessivo spalmato sui giorni di "
+            "durata, per i progetti senza calendario."
+        ),
+    ).startswith("Calendario")
+    netto = r2.checkbox(
+        "Al netto delle uscite previste (partner, fornitori)",
+        value=False,
+        disabled=not base_calendario,
+        help="Sottrae dal calendario le uscite previste: es. le quote da girare "
+        "ai partner di progetto.",
+    )
     pesati = st.toggle("Pesa le proposte per probabilità di successo", value=True)
+    flussi = portfolio_repo.flussi_previsti()
+    calendario, senza_data = (
+        ricavi_da_calendario(flussi, netto=netto) if base_calendario else ({}, {})
+    )
     ric = ricavi_per_anno(
         [
             {
@@ -208,7 +233,9 @@ if is_admin:
             for i in iniziative
         ],
         pesati=pesati,
+        calendario=calendario,
     )
+    ric_tutti = ric
     ric = [r for r in ric if r["anno"] in finestra]
     if ric:
         df_r = pd.DataFrame(
@@ -221,6 +248,12 @@ if is_admin:
                 for r in ric
             ]
         )
+        titolo_grafico = (
+            "Incassi previsti per anno"
+            + (" (al netto delle uscite)" if netto and base_calendario else "")
+            if base_calendario
+            else "Finanziamento/budget distribuito pro-rata sugli anni"
+        )
         fig_r = px.bar(
             df_r,
             x="Anno",
@@ -229,11 +262,7 @@ if is_admin:
             barmode="stack",
             category_orders={"Anno": [str(a) for a in finestra]},
         )
-        layout_base(
-            fig_r,
-            altezza=360,
-            title="Finanziamento/budget distribuito pro-rata sugli anni",
-        )
+        layout_base(fig_r, altezza=360, title=titolo_grafico)
         st.plotly_chart(fig_r, use_container_width=True)
         piv = df_r.pivot_table(
             index="Iniziativa",
@@ -244,11 +273,48 @@ if is_admin:
         )
         piv.loc["TOTALE"] = piv.sum()
         st.dataframe(piv.style.format("{:,.0f}"), use_container_width=True)
-    st.caption(
-        "Importo = finanziamento complessivo se noto, altrimenti budget; le "
-        "proposte in bozza/inviate entrano pesate per la probabilità "
-        "(impostabile nella pagina Proposte)."
-    )
+        n_cal = len(
+            {r["iniziativa_id"] for r in ric_tutti if r["base"] == "calendario"}
+        )
+        n_uni = len({r["iniziativa_id"] for r in ric_tutti if r["base"] == "uniforme"})
+        st.caption(
+            f"Base: calendario degli incassi per **{n_cal}** iniziative, "
+            f"distribuzione uniforme per **{n_uni}** (senza calendario). "
+            + (
+                "Importi al netto delle uscite previste. "
+                if netto and base_calendario
+                else ""
+            )
+            + "Le proposte in bozza/inviate entrano pesate per la probabilità "
+            "(impostabile nella pagina Proposte)."
+        )
+        if senza_data:
+            st.warning(
+                "Movimenti previsti senza data (esclusi dai totali per anno): "
+                + ", ".join(
+                    f"{etichetta_progetto(i)} {float(senza_data[str(i.id)]):,.0f} €"
+                    for i in iniziative
+                    if str(i.id) in senza_data
+                )
+            )
+
+    # coerenza fra finanziamento complessivo e calendario dei flussi
+    incongruenze = []
+    for i in iniziative:
+        fl = [f for f in flussi if f["iniziativa_id"] == str(i.id)]
+        esito = riconcilia_finanziamento(
+            getf(i, "finanziamento_complessivo"),
+            sum((f["importo"] for f in fl if f["segno"] == "entrata"), Decimal("0")),
+            sum((f["importo"] for f in fl if f["segno"] == "uscita"), Decimal("0")),
+        )
+        if esito["esito"] in ("netto", "diverso"):
+            incongruenze.append((i, esito))
+    if incongruenze:
+        with st.expander(
+            f"⚠️ Finanziamento e calendario non coincidono ({len(incongruenze)})"
+        ):
+            for i, e in incongruenze:
+                st.markdown(f"**{etichetta_progetto(i)}** — {e['messaggio']}")
 
 # --- Carico per persona e anno ----------------------------------------------------
 st.subheader("Carico previsto per persona e anno")

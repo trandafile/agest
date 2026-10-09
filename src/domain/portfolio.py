@@ -229,8 +229,89 @@ def tabella_saturazione(
     return out
 
 
-def ricavi_per_anno(iniziative: list[dict], pesati: bool = True) -> list[dict]:
-    """Importo atteso per iniziativa e anno (pro-rata sui giorni).
+def ricavi_da_calendario(
+    flussi: list[dict], netto: bool = False
+) -> tuple[dict[str, dict[int, Decimal]], dict[str, Decimal]]:
+    """Importi per iniziativa e anno dal calendario dei movimenti previsti.
+
+    `flussi`: [{iniziativa_id, segno('entrata'|'uscita'), importo, data_attesa}].
+    Per default conta i soli INCASSI (lordi, già incassati inclusi: coincidono
+    col totale mostrato nella scheda «Flussi finanziari» del progetto); con
+    `netto=True` sottrae le uscite previste (quote ai partner, fornitori).
+
+    Ritorna ({iniziativa_id: {anno: importo}}, {iniziativa_id: importo senza
+    data}). Entrano solo le iniziative con almeno un incasso nel calendario.
+    """
+    per_anno: dict[str, dict[int, Decimal]] = {}
+    senza_data: dict[str, Decimal] = {}
+    con_incassi: set[str] = set()
+    for f in flussi:
+        iid = str(f["iniziativa_id"])
+        segno = f.get("segno")
+        if segno == "entrata":
+            con_incassi.add(iid)
+        elif segno != "uscita" or not netto:
+            continue
+        valore = _dec(f.get("importo")) * (1 if segno == "entrata" else -1)
+        quando = f.get("data_attesa")
+        if quando is None:
+            senza_data[iid] = senza_data.get(iid, Decimal("0")) + valore
+            continue
+        anni = per_anno.setdefault(iid, {})
+        anni[quando.year] = anni.get(quando.year, Decimal("0")) + valore
+    return (
+        {i: a for i, a in per_anno.items() if i in con_incassi},
+        {i: v for i, v in senza_data.items() if i in con_incassi},
+    )
+
+
+def riconcilia_finanziamento(
+    finanziamento, entrate, uscite, tolleranza: Decimal = Decimal("1")
+) -> dict:
+    """Confronta il finanziamento complessivo con il calendario dei flussi.
+
+    Esiti: 'nd' (mancano dati), 'coerente' (finanziamento = incassi previsti),
+    'netto' (finanziamento = incassi − uscite: è il valore al netto delle quote
+    ai partner), 'diverso' (non corrisponde a nessuno dei due).
+    """
+    fin, ent, usc = _dec(finanziamento), _dec(entrate), _dec(uscite)
+    netto = ent - usc
+    base = {"finanziamento": fin, "entrate": ent, "uscite": usc, "netto": netto}
+    if ent <= 0 or fin <= 0:
+        return {**base, "esito": "nd", "messaggio": ""}
+    if abs(fin - ent) <= tolleranza:
+        return {**base, "esito": "coerente", "messaggio": ""}
+
+    def eur(v: Decimal) -> str:
+        return f"{v:,.0f} €".replace(",", ".")
+
+    if usc > 0 and abs(fin - netto) <= tolleranza:
+        msg = (
+            f"Il finanziamento complessivo ({eur(fin)}) corrisponde al NETTO del "
+            f"calendario: incassi {eur(ent)} − uscite previste {eur(usc)}. "
+            "Negli altri progetti il finanziamento è il totale lordo degli "
+            f"incassi: se il contratto vale {eur(ent)}, aggiornalo."
+        )
+        return {**base, "esito": "netto", "messaggio": msg}
+    msg = (
+        f"Il finanziamento complessivo ({eur(fin)}) non corrisponde né agli "
+        f"incassi previsti ({eur(ent)}) né al netto ({eur(netto)}): scarto "
+        f"{eur(ent - fin)} sugli incassi."
+    )
+    return {**base, "esito": "diverso", "messaggio": msg}
+
+
+def ricavi_per_anno(
+    iniziative: list[dict],
+    pesati: bool = True,
+    calendario: dict[str, dict[int, Decimal]] | None = None,
+) -> list[dict]:
+    """Importo atteso per iniziativa e anno.
+
+    Base di calcolo per ciascuna iniziativa: se `calendario` contiene i suoi
+    incassi datati (vedi `ricavi_da_calendario`) si usano quelli, anno per
+    anno; altrimenti l'importo complessivo è distribuito pro-rata sui giorni
+    fra inizio e fine (`base` = «calendario» / «uniforme» in ogni riga).
 
     `iniziative`: [{id, etichetta, tipo, stato, importo, probabilita,
     data_inizio, data_fine, tipo_ricavo, controparte}]. Le proposte vive sono
@@ -246,12 +327,19 @@ def ricavi_per_anno(iniziative: list[dict], pesati: bool = True) -> list[dict]:
         peso = Decimal("1")
         if tipo == "proposta" and pesati:
             peso = _dec(i.get("probabilita"))
-        for anno, q in quota_per_anno(
-            i.get("data_inizio"), i.get("data_fine"), i.get("importo")
-        ).items():
+        iid = str(i.get("id"))
+        if calendario and iid in calendario:
+            quote, base = calendario[iid], "calendario"
+        else:
+            quote = quota_per_anno(
+                i.get("data_inizio"), i.get("data_fine"), i.get("importo")
+            )
+            base = "uniforme"
+        for anno, q in sorted(quote.items()):
             out.append(
                 {
-                    "iniziativa_id": str(i.get("id")),
+                    "iniziativa_id": iid,
+                    "base": base,
                     "etichetta": i.get("etichetta") or "",
                     "tipo": tipo,
                     "stato": stato,
