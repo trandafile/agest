@@ -646,3 +646,69 @@ Interfaccia (pagina Progetti, solo amministratore):
 
 Logica in `src/lib/milestone_service.py` (`crea_milestone`, `aggiungi_incasso`,
 `collega`) e `finanza_repo.collega_movimento_milestone`.
+
+---
+
+## 14. Estensioni 11/2026 — gestore task, import, Gantt di progetto
+
+### 14.1 Livello «gestore task» (`src/auth/permessi.py`, migrazione 0019)
+
+Livello gestionale **intermedio**, ortogonale al ruolo di sistema e alla
+visibilità economica (§13.1 resta a due livelli): flag `persona.gestore_task`,
+impostato in Anagrafica.
+
+| Azione | dipendente | gestore task | admin |
+|---|---|---|---|
+| vedere task e deliverable | ✓ | ✓ | ✓ |
+| creare task | ✓ | ✓ | ✓ |
+| modificare/archiviare task e deliverable | propri (owner/supervisor) | **tutti** | tutti |
+| eliminare definitivamente un task | — | ✓ | ✓ |
+| creare/eliminare deliverable | — (pm sì) | ✓ | ✓ |
+| importare da YAML/JSON | — | ✓ | ✓ |
+| «La mia settimana» di un collega | — | ✓ | ✓ |
+| dati economici, Gantt di progetto | — | — | ✓ |
+
+Il gestore resta «dipendente» per tutto il resto. Policy RLS `task_gestore_all`
+e `deliverable_gestore_all` (rete di sicurezza per l'Opzione B).
+
+### 14.2 Import di deliverable, task e subtask (`src/domain/task_import.py`)
+
+Pagina Task → «📥 Importa…» (gestore task e admin). Schema `agest-import/v1`,
+gemello di `maic-tasks-import/v1` di MAIC tasks: stesse azioni (create,
+update, move, complete, cancel, keep), stessi controlli (nomi risolti
+sull'anagrafica, `match_title` obbligatorio per gli esistenti, duplicati
+bloccati, deliverable completabile solo con il lavoro chiuso), chiavi e valori
+accettati in inglese (MAIC) o in italiano. Gli elementi esistenti si indicano
+con l'identificativo breve `#xxxxxxxx` mostrato nel prompt per LLM; `ref: "0"`
+è il contenitore dei task senza deliverable. Campo `gantt` per collegare un
+task a una voce del cronoprogramma. Validazione con anteprima, poi scrittura in
+**un'unica transazione** (`db.transaction`): o entra tutto o niente.
+
+### 14.3 Gantt di progetto (`pages/H_Gantt.py`, `src/domain/gantt.py`, `src/data/gantt_repo.py`) — solo admin
+
+- **Import**: Excel, CSV, righe copiate da Excel (incolla), MS Project XML;
+  intestazioni in italiano o inglese; tipo e padre dedotti dal codice (WP1,
+  T1.2, D1.3, MS2; WBS 1.2.3) se non indicati; i mesi di progetto M1..Mn
+  diventano date dall'inizio dell'iniziativa; deliverable e milestone sono
+  istanti a fine mese; le WP senza date prendono min/max dei figli. Le voci si
+  aggiornano per codice; quelle assenti dal file si rimuovono solo su richiesta.
+  Modello Excel e prompt per convertire un Gantt con un LLM.
+- **Trasferisci in task**: task → task (scadenza = fine voce, nel deliverable
+  scelto), deliverable → deliverable, WP → work package, milestone → milestone
+  di progetto; owner proposto dal «responsabile» della voce; tutto collegato
+  alla voce (`gantt_voce_id`).
+- **Collega task**: associazione di task e deliverable esistenti alle voci.
+- **Cronoprogramma**: barre per voce con avanzamento reale dai task collegati
+  (completati/totali; annullati esclusi), «in ritardo» (fine passata con lavoro
+  aperto), «slittamento» (task collegati con scadenza oltre la fine), linea di
+  oggi, asse in mesi di progetto. La logica è identica a
+  `maic-tasks/utils/gantt.py`: tenerle allineate.
+
+### 14.4 Note operative
+
+- Applicare la migrazione 0019 (`python scripts/apply_schema.py`): finché
+  manca, l'app funziona come prima (Gantt e flag gestore disattivati).
+- Il login simulato richiede ora `MOCK_LOGIN=1` esplicito: senza
+  `GOOGLE_CLIENT_ID` e senza flag la pagina di accesso mostra un errore.
+- 0018: il recupero dei dati esistenti gira una sola volta
+  (`migrazione_marker`).
