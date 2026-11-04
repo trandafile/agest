@@ -76,6 +76,7 @@ MATRICE_VISIBILITA: dict[str, tuple[Livello, ...]] = {
     ),
     "Progetti (vista economica)": (Livello.amministratore,),
     "Proposte": (Livello.amministratore,),
+    "Gantt di progetto": (Livello.amministratore,),
     "Portfolio (importi, probabilità, capacity)": (Livello.amministratore,),
     "Anagrafica": (Livello.amministratore,),
     "Report dipendenti": (Livello.amministratore,),

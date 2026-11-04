@@ -44,6 +44,7 @@ class Persona(BaseModel):
     email: str
     ruolo_sistema: RuoloSistema = RuoloSistema.dipendente
     attivo: bool = True
+    gestore_task: bool = False  # livello intermedio (0019): gestisce tutti i task
     codice_fiscale: str | None = None
     monte_ore_annuo: int | None = 1720
     tipo_contratto: TipoContratto | None = None
@@ -240,6 +241,7 @@ class Deliverable(BaseModel):
     supervisor_id: UUID | None = None
     descrizione: str | None = None
     archiviato: bool = False
+    gantt_voce_id: UUID | None = None  # voce di cronoprogramma (0019)
     created_at: datetime | None = None
 
     @property
@@ -266,6 +268,7 @@ class Task(BaseModel):
     completato_il: date | None = None
     archiviato: bool = False
     last_reminder_sent: date | None = None  # v3
+    gantt_voce_id: UUID | None = None  # voce di cronoprogramma (0019)
     created_at: datetime | None = None
 
     @property

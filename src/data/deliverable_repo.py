@@ -18,6 +18,7 @@ _UPDATABLE = {
     "supervisor_id",
     "descrizione",
     "archiviato",
+    "gantt_voce_id",
 }
 
 
@@ -89,15 +90,16 @@ def create_deliverable(
     owner_id: UUID | str | None = None,
     supervisor_id: UUID | str | None = None,
     descrizione: str | None = None,
+    gantt_voce_id: UUID | str | None = None,
 ) -> Deliverable:
+    cols = "iniziativa_id, titolo, tipo, scadenza, owner_id, supervisor_id, descrizione"
+    extra: tuple = ()
+    if gantt_voce_id:  # colonna della migrazione 0019: solo se serve
+        cols += ", gantt_voce_id"
+        extra = (str(gantt_voce_id),)
+    marks = ", ".join(["%s"] * (7 + len(extra)))
     row = db.execute(
-        """
-        insert into deliverable
-            (iniziativa_id, titolo, tipo, scadenza, owner_id, supervisor_id,
-             descrizione)
-        values (%s, %s, %s, %s, %s, %s, %s)
-        returning *
-        """,
+        f"insert into deliverable ({cols}) values ({marks}) returning *",
         (
             str(iniziativa_id),
             titolo,
@@ -106,6 +108,7 @@ def create_deliverable(
             str(owner_id) if owner_id else None,
             str(supervisor_id) if supervisor_id else None,
             descrizione,
+            *extra,
         ),
     )[0]
     return _to_deliverable(row)

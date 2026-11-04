@@ -7,11 +7,11 @@ from uuid import UUID
 from src.domain.models import Persona, RuoloSistema
 from src.lib import db
 
-_COLS = (
-    "id, nome, cognome, matricola, email, ruolo_sistema, attivo, "
-    "codice_fiscale, monte_ore_annuo, tipo_contratto, contratto_data_inizio, "
-    "contratto_data_fine, created_at, updated_at"
-)
+# `*` invece dell'elenco esplicito: le colonne aggiunte dalle migrazioni
+# (es. `gestore_task`, 0019) arrivano al modello appena esistono, e finché la
+# migrazione non è applicata il modello usa il default — il login non si rompe.
+# Le colonne in più (es. `last_reminder_sent`) sono ignorate da pydantic.
+_COLS = "*"
 # Colonne aggiornabili via update_persona (whitelist: no nomi colonna dall'esterno)
 _UPDATABLE = {
     "nome",
@@ -25,6 +25,7 @@ _UPDATABLE = {
     "tipo_contratto",
     "contratto_data_inizio",
     "contratto_data_fine",
+    "gestore_task",
 }
 
 

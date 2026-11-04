@@ -66,7 +66,20 @@ def login_button() -> None:
             "⚠️ In attesa delle credenziali Google OAuth "
             "(GOOGLE_CLIENT_ID nei secrets)."
         )
-        # Fallback di sviluppo finche' i secrets non sono compilati.
+        # Fallback di sviluppo SOLO se abilitato esplicitamente: prima bastava
+        # che mancasse GOOGLE_CLIENT_ID (es. secrets incompleti in produzione)
+        # perché chiunque potesse entrare come qualsiasi utente, admin inclusi.
+        if str(get_secret("MOCK_LOGIN", "") or "").strip().lower() not in (
+            "1",
+            "true",
+            "si",
+            "yes",
+        ):
+            st.error(
+                "Login non configurato. In sviluppo locale imposta MOCK_LOGIN=1 "
+                "per il login simulato."
+            )
+            return
         mock_email = st.text_input(
             "Mock Login (Dev)", placeholder="luigi.boccia@antecnica.it"
         )

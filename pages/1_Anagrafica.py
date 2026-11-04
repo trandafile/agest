@@ -16,6 +16,12 @@ persona = require_role(RuoloSistema.admin)
 
 _CONTRATTI = [None] + list(TipoContratto)
 
+_HELP_GESTORE = (
+    "Livello gestionale intermedio: crea, modifica, archivia ed elimina task e "
+    "deliverable di chiunque e può importarli da YAML/JSON. Non vede i dati "
+    "economici (resta livello «dipendente»). Richiede la migrazione 0019."
+)
+
 
 def _fmt_contratto(t) -> str:
     return "—" if t is None else TIPO_CONTRATTO_LABEL[t.value]
@@ -44,6 +50,10 @@ with st.expander("➕ Nuova persona"):
         ruolo = st.selectbox(
             "Ruolo", options=list(RuoloSistema), format_func=lambda r: r.value
         )
+        n_gestore = st.checkbox(
+            "Gestore task (livello intermedio)",
+            help=_HELP_GESTORE,
+        )
         st.markdown("**Contratto**")
         k1, k2, k3 = st.columns(3)
         n_tipo = k1.selectbox("Tipologia", _CONTRATTI, format_func=_fmt_contratto)
@@ -59,7 +69,7 @@ with st.expander("➕ Nuova persona"):
             else:
                 try:
                     fine = n_fine if n_tipo == TipoContratto.tempo_determinato else None
-                    persona_repo.create_persona(
+                    nuova = persona_repo.create_persona(
                         nome=nome,
                         cognome=cognome,
                         email=email,
@@ -69,6 +79,8 @@ with st.expander("➕ Nuova persona"):
                         contratto_data_inizio=n_inizio,
                         contratto_data_fine=fine,
                     )
+                    if n_gestore:
+                        persona_repo.update_persona(nuova.id, gestore_task=True)
                     st.success(f"Persona {nome} {cognome} creata.")
                     st.rerun()
                 except Exception as exc:  # noqa: BLE001
@@ -111,6 +123,11 @@ if persone:
                 index=list(RuoloSistema).index(sel.ruolo_sistema),
                 format_func=lambda r: r.value,
             )
+            m_gestore = st.checkbox(
+                "Gestore task (livello intermedio)",
+                value=bool(getf(sel, "gestore_task", False)),
+                help=_HELP_GESTORE,
+            )
             st.markdown("**Contratto**")
             k1, k2, k3 = st.columns(3)
             idx_c = (
@@ -149,8 +166,16 @@ if persone:
                             contratto_data_inizio=m_inizio,
                             contratto_data_fine=fine,
                         )
+                        if m_gestore != bool(getf(sel, "gestore_task", False)):
+                            persona_repo.update_persona(sel.id, gestore_task=m_gestore)
                         st.success("Modifiche salvate.")
-                        st.session_state.pop("_persona", None)
+                        # Ricarica la sessione solo se l'admin ha modificato
+                        # se stesso: togliere `_persona` (come prima) mandava
+                        # alla schermata di login a ogni salvataggio.
+                        if sel.id == persona.id:
+                            st.session_state["_persona"] = persona_repo.get_persona(
+                                sel.id
+                            )
                         st.rerun()
                     except Exception as exc:  # noqa: BLE001
                         st.error(f"Errore: {exc}")

@@ -12,6 +12,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from src.auth.permessi import puo_gestire_deliverable, puo_modificare_deliverable
 from src.auth.session import require_login
 from src.data import deliverable_repo, iniziativa_repo, persona_repo, task_repo
 from src.domain.models import (
@@ -28,7 +29,7 @@ from src.ui.task_ui import form_nuovo_task, riga_task, scadenza_chip
 
 persona = require_login()
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
-puo_gestire = persona.ruolo_sistema in (RuoloSistema.admin, RuoloSistema.pm)
+puo_gestire = puo_gestire_deliverable(persona)
 
 st.title("Deliverable")
 st.caption(
@@ -48,8 +49,8 @@ if _msg:
 
 
 def _puo_modificare(d) -> bool:
-    """Modifica: owner, supervisor o admin (come i task)."""
-    return is_admin or persona.id in (d.owner_id, d.supervisor_id)
+    """Modifica: owner, supervisor, gestore task o admin (come i task)."""
+    return puo_modificare_deliverable(d, persona)
 
 
 # --- Dialog -------------------------------------------------------------------

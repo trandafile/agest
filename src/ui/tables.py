@@ -21,6 +21,7 @@ def persone_dataframe(persone: list[Persona]) -> pd.DataFrame:
                 "Matricola": p.matricola or "",
                 "Email": p.email,
                 "Ruolo": getattr(p.ruolo_sistema, "value", str(p.ruolo_sistema)),
+                "Gestore task": "si" if getattr(p, "gestore_task", False) else "",
                 "Contratto": contratto_descr(p),
                 "Attivo": "si" if p.attivo else "no",
             }

@@ -12,8 +12,9 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.auth.permessi import descrizione_livello
 from src.auth.session import require_login, sidebar_utente
-from src.auth.visibilita import livello, vede_economia
+from src.auth.visibilita import vede_economia
 from src.domain.models import RuoloSistema
 from src.lib.labels import versione_app
 
@@ -70,6 +71,10 @@ def main() -> None:
         blocco_gestione.append(
             st.Page("pages/6_Progetti.py", title="Progetti", icon="📊")
         )
+    if admin:
+        blocco_gestione.append(
+            st.Page("pages/H_Gantt.py", title="Gantt di progetto", icon="🗓")
+        )
 
     # Report: presentazioni per tutti; report dipendenti e anagrafica solo admin
     blocco_report = [
@@ -98,7 +103,7 @@ def main() -> None:
     pagina = st.navigation(nav, position="sidebar", expanded=True)
     sidebar_utente(persona)
     with st.sidebar:
-        st.caption(f"Livello: {livello(persona.ruolo_sistema).value}")
+        st.caption(f"Livello: {descrizione_livello(persona)}")
 
     versione = versione_app()
     if versione:

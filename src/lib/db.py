@@ -12,7 +12,8 @@ opzionalmente con RETURNING). Le righe tornano come dict (dict_row).
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 import streamlit as st
@@ -88,3 +89,18 @@ def execute(
         if cur.description is not None:
             return cur.fetchall()
         return []
+
+
+@contextmanager
+def transaction(user_email: str | None = None) -> Iterator[Any]:
+    """Cursore dentro UNA transazione: commit all'uscita, rollback se
+    un'eccezione attraversa il blocco (import multi-riga: tutto o niente).
+
+    `user_email` come in `execute` (GUC `app.current_email` per audit/storico).
+    """
+    with get_pool().connection() as conn, conn.transaction(), conn.cursor() as cur:
+        if user_email:
+            cur.execute(
+                "select set_config('app.current_email', %s, true)", (user_email,)
+            )
+        yield cur

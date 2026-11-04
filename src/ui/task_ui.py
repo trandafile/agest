@@ -6,6 +6,7 @@ from datetime import date
 
 import streamlit as st
 
+from src.auth.permessi import puo_eliminare_task, puo_modificare_task
 from src.data import persona_repo, task_repo
 from src.domain.models import (
     PRIORITA_BADGE,
@@ -95,7 +96,7 @@ def task_dialog(
     persona: Persona,
     is_admin: bool,
 ) -> None:
-    can_edit = task_repo.puo_modificare(task, persona.id, is_admin)
+    can_edit = puo_modificare_task(task, persona)
     st.markdown(f"### {task.titolo}")
     if task.descrizione:
         st.markdown(task.descrizione)
@@ -109,9 +110,11 @@ def task_dialog(
 
         gcal = link_google_calendar(f"✅ {task.titolo}", task.scadenza)
         st.markdown(f"[➕ Aggiungi a Google Calendar]({gcal})")
+    _voce_gantt(task)
     if not can_edit:
         st.info(
-            "Sola lettura: puoi modificare solo i task di cui sei owner/supervisor."
+            "Sola lettura: puoi modificare solo i task di cui sei owner/supervisor "
+            "(o tutti, se hai il livello «gestore task»)."
         )
         blocco_subtask(task, nomi, persona, is_admin, can_edit=False)
         st.divider()
@@ -233,11 +236,43 @@ def task_dialog(
     if b2.button("🗂 Archivia", use_container_width=True):
         task_repo.update_task(task.id, eseguito_da=persona.email, archiviato=True)
         st.rerun()
+    if puo_eliminare_task(persona):
+        with st.expander("🗑 Elimina definitivamente"):
+            st.caption(
+                "Rimuove il task (e i suoi subtask) con i commenti. Per togliere "
+                "un task dalla vista senza perdere la storia usa «Archivia»."
+            )
+            ok = st.checkbox(
+                f"Confermo l'eliminazione di «{task.titolo}»",
+                key=f"del_ok_{task.id}",
+            )
+            if st.button(
+                "Elimina", type="primary", disabled=not ok, key=f"del_{task.id}"
+            ):
+                task_repo.delete_task(task.id)
+                st.rerun()
 
     blocco_subtask(task, nomi, persona, is_admin, can_edit=True)
     _storico_stati(task)
     st.divider()
     blocco_commenti("task", task.id, persona, is_admin, nomi)
+
+
+def _voce_gantt(task: Task) -> None:
+    """Voce di cronoprogramma collegata (Gantt, 0019), se c'è."""
+    if not getattr(task, "gantt_voce_id", None):
+        return
+    try:
+        from src.data import gantt_repo
+
+        v = gantt_repo.get_voce(task.gantt_voce_id)
+    except Exception:  # noqa: BLE001
+        return
+    if v:
+        periodo = ""
+        if v.get("data_inizio") and v.get("data_fine"):
+            periodo = f" · {v['data_inizio']:%d/%m/%Y} → {v['data_fine']:%d/%m/%Y}"
+        st.caption(f"🗓 Gantt: **{v['codice']}** {v['titolo']}{periodo}")
 
 
 def _storico_stati(task: Task) -> None:
@@ -518,7 +553,7 @@ def card_kanban(
             f"{titoli_iniziative.get(task.iniziativa_id, '—')}{conta}</small>",
             unsafe_allow_html=True,
         )
-        if task_repo.puo_modificare(task, persona.id, is_admin):
+        if puo_modificare_task(task, persona):
             i = KANBAN_STATI.index(task.stato) if task.stato in KANBAN_STATI else 0
             b1, b2, b3 = st.columns(3)
             if i > 0 and b1.button(

@@ -28,6 +28,7 @@ _UPDATABLE = {
     "completato_il",
     "archiviato",
     "last_reminder_sent",
+    "gantt_voce_id",
 }
 
 
@@ -69,15 +70,19 @@ def create_task(
     scadenza: date | None = None,
     ore_stimate: float | None = None,
     eseguito_da: str | None = None,
+    gantt_voce_id: UUID | str | None = None,
 ) -> Task:
+    cols = (
+        "titolo, owner_id, supervisor_id, iniziativa_id, deliverable_id, "
+        "parent_task_id, descrizione, priorita, scadenza, ore_stimate"
+    )
+    extra: tuple = ()
+    if gantt_voce_id:  # colonna della migrazione 0019: solo se serve
+        cols += ", gantt_voce_id"
+        extra = (str(gantt_voce_id),)
+    marks = ", ".join(["%s"] * (10 + len(extra)))
     row = db.execute(
-        """
-        insert into task (titolo, owner_id, supervisor_id, iniziativa_id,
-                          deliverable_id, parent_task_id, descrizione, priorita,
-                          scadenza, ore_stimate)
-        values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        returning *
-        """,
+        f"insert into task ({cols}) values ({marks}) returning *",
         (
             titolo,
             str(owner_id) if owner_id else None,
@@ -89,6 +94,7 @@ def create_task(
             priorita,
             scadenza,
             ore_stimate,
+            *extra,
         ),
         user_email=eseguito_da,
     )[0]
@@ -125,7 +131,10 @@ def delete_task(task_id: UUID | str) -> None:
 
 
 def puo_modificare(task: Task, persona_id: UUID, is_admin: bool) -> bool:
-    """Regola MAIC tasks: modifica owner/supervisor (o admin)."""
+    """Regola MAIC tasks: modifica owner/supervisor (o admin).
+
+    `is_admin` vale anche per il gestore task: preferire
+    `src.auth.permessi.puo_modificare_task(task, persona)`."""
     return is_admin or persona_id in (task.owner_id, task.supervisor_id)
 
 

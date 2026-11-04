@@ -9,6 +9,13 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from src.auth.permessi import (
+    is_gestore_task,
+    puo_archiviare_deliverable,
+    puo_gestire_deliverable,
+    puo_importare_task,
+    puo_modificare_task,
+)
 from src.auth.session import require_login
 from src.data import (
     deliverable_repo,
@@ -35,7 +42,8 @@ from src.ui.task_ui import (
 
 persona = require_login()
 is_admin = persona.ruolo_sistema == RuoloSistema.admin
-puo_gestire_deliv = persona.ruolo_sistema in (RuoloSistema.admin, RuoloSistema.pm)
+puo_gestire_deliv = puo_gestire_deliverable(persona)
+gestore = is_gestore_task(persona)
 
 st.title("Task e deliverable")
 
@@ -74,6 +82,12 @@ with st.expander("📄 Esporta report attività"):
 
 with st.expander("➕ Nuovo task"):
     form_nuovo_task(persone, iniziative, default_owner=persona)
+
+if puo_importare_task(persona):
+    with st.expander("📥 Importa deliverable, task e subtask (YAML/JSON)"):
+        from src.ui.task_import_ui import blocco_import
+
+        blocco_import(persona, iniziative, persone)
 
 # --- Filtri -----------------------------------------------------------------
 f1, f2, f3, f4 = st.columns(4)
@@ -255,7 +269,9 @@ if vista.startswith("🌳"):
                         deliverable_fissa=d,
                         key=f"ntd_{d.id}",
                     )
-                if is_admin and dcol2.button("🗄 archivia", key=f"arch_d_{d.id}"):
+                if puo_archiviare_deliverable(persona) and dcol2.button(
+                    "🗄 archivia", key=f"arch_d_{d.id}"
+                ):
                     deliverable_repo.update_deliverable(d.id, archiviato=True)
                     st.rerun()
 
@@ -300,10 +316,10 @@ elif vista.startswith("🗓"):
         if t.stato in ("da_fare", "in_corso", "bloccato")
         and (
             t.owner_id == persona.id
-            or (is_admin and filtro_persona and t.owner_id == filtro_persona.id)
+            or (gestore and filtro_persona and t.owner_id == filtro_persona.id)
         )
     ]
-    if is_admin and filtro_persona:
+    if gestore and filtro_persona:
         miei = [t for t in miei if t.owner_id == filtro_persona.id]
     try:
         from src.data import task_storico_repo
@@ -380,7 +396,7 @@ else:
     )
     for t in sorted(radici, key=_key):
         _render_task_con_figli(t, "lst")
-        if task_repo.puo_modificare(t, persona.id, is_admin):
+        if puo_modificare_task(t, persona):
             with st.expander(f"↳ aggiungi subtask a «{t.titolo}»", expanded=False):
                 form_nuovo_task(
                     persone,
