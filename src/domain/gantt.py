@@ -435,6 +435,11 @@ def resolve(res: ParseResult, project_start: _dt.date | None) -> ParseResult:
             and not all(r.start or r.end for r in res.rows):
         res.warnings.append(MSG["months_no_start"])
     for r in res.rows:
+        if project_start and r.kind in ("milestone", "deliverable") \
+                and r.start is None and r.end is None and r.end_month:
+            # consegna: un istante, alla fine del mese di progetto indicato
+            r.start = r.end = month_end(project_start, r.end_month)
+            r.start_month = r.end_month
         if project_start:
             if r.start is None and r.start_month:
                 r.start = month_start(project_start, r.start_month)

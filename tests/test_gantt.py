@@ -58,6 +58,8 @@ def test_incolla_da_excel_con_mesi():
     assert by["T1.1"].parent_code == "WP1" and by["D1.1"].kind == "deliverable"
     assert by["D1.1"].start_month == 3 == by["D1.1"].end_month
     resolve(r, date(2026, 1, 1))
+    # deliverable: consegna alla fine di M3
+    assert by["D1.1"].start == by["D1.1"].end == date(2026, 3, 31)
     assert by["T2.1"].start == date(2026, 2, 1) and by["T2.1"].end == date(2026, 10, 31)
     # WP senza periodo: deriva dai figli
     assert by["WP2"].start == date(2026, 2, 1) and by["WP2"].end == date(2026, 10, 31)

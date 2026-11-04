@@ -173,9 +173,10 @@ with t_gantt:
                               for m in range(1, ultimo + 2, passo)],
                     ticktext=[f"M{m}" for m in range(1, ultimo + 2, passo)],
                 )
-            fig.update_layout(height=max(320, 28 * len(presenti) + 120),
-                              margin={"l": 10, "r": 10, "t": 30, "b": 10},
-                              legend={"orientation": "h", "y": 1.05})
+            fig.update_layout(height=max(320, 28 * len(presenti) + 140),
+                              margin={"l": 10, "r": 10, "t": 50, "b": 10},
+                              legend={"orientation": "h", "yanchor": "bottom",
+                                      "y": 1.02, "x": 0, "title": None})
             st.plotly_chart(fig, use_container_width=True)
 
         tab = []
