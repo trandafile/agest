@@ -703,6 +703,12 @@ task a una voce del cronoprogramma. Validazione con anteprima, poi scrittura in
   aperto), «slittamento» (task collegati con scadenza oltre la fine), linea di
   oggi, asse in mesi di progetto. La logica è identica a
   `maic-tasks/utils/gantt.py`: tenerle allineate.
+- **Presentazioni**: il report di progetto (Presentazioni → progetto) ha la
+  slide «Gantt di progetto» dopo il cronoprogramma: barre per WP e task,
+  rombi per deliverable e milestone, colore per stato (completato,
+  slittamento, in ritardo), «n/m» = task collegati chiusi. Righe da
+  `gantt.deck_rows` → `report_pack.righe_gantt_progetto`; disegno
+  `DeckBuilder.gantt(..., colori=COLORE_GANTT)` (forme native, niente immagini).
 
 ### 14.4 Note operative
 

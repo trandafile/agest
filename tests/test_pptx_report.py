@@ -499,3 +499,39 @@ def test_report_personale_pack_vuoto():
     assert "Nessun task attivo assegnato." in testo
     assert "Nessun task bloccato." in testo
     assert "Click to add" not in testo
+
+
+def test_gantt_di_progetto_con_rombi_e_stati():
+    """Slide «Gantt di progetto»: righe da gantt.deck_rows, rombi per le
+    consegne, colori per stato; testabile senza DB."""
+    from datetime import date
+
+    from pptx import Presentation
+
+    from src.domain.gantt import deck_rows
+    from src.lib.pptx_report import build_report_progetto
+    from src.lib.report_pack import righe_gantt_progetto
+
+    items = [
+        {"id": 1, "parent_id": None, "code": "WP1", "name": "Gestione", "kind": "wp",
+         "start": date(2026, 1, 1), "end": date(2026, 12, 31),
+         "start_month": 1, "end_month": 12},
+        {"id": 2, "parent_id": 1, "code": "T1.1", "name": "Coordinamento",
+         "kind": "task", "start": date(2026, 1, 1), "end": date(2026, 3, 31),
+         "start_month": 1, "end_month": 3},
+        {"id": 3, "parent_id": 1, "code": "D1.1", "name": "Piano", "kind": "deliverable",
+         "start": date(2026, 3, 1), "end": date(2026, 3, 31),
+         "start_month": 3, "end_month": 3},
+    ]
+    righe = righe_gantt_progetto(deck_rows(
+        items, [{"gantt_id": 2, "status": "in_corso", "due": None}],
+        today=date(2026, 6, 1)))
+    assert righe[1]["categoria"] == "In ritardo" and righe[1]["testo_barra"] == "0/1"
+    assert righe[2]["solo_milestone"] and righe[2]["milestone"] == [date(2026, 3, 31)]
+    assert righe[1]["etichetta"].startswith("   T1.1")
+    pack = {"titolo": "Demo", "acronimo": "DEMO", "gantt_progetto": righe,
+            "anni_gantt": [2026]}
+    prs = Presentation(BytesIO(build_report_progetto(pack)))
+    titoli = [sh.text_frame.text for s in prs.slides for sh in s.shapes
+              if sh.has_text_frame]
+    assert "Gantt di progetto" in titoli

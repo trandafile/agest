@@ -106,8 +106,9 @@ pianificazione ore per anno (qui `piano_ore_anno`, in MAIC `effort_plan`).
 Proposte:
 1. **Codici leggibili** (E.1.2) anche qui: i ref dell'import diventerebbero
    identici fra le due app.
-2. **Gantt nelle presentazioni** (slide cronoprogramma con avanzamento per
-   SAL/review) e **baseline** del Gantt (piano della proposta vs ripianificato).
+2. ~~Gantt nelle presentazioni~~ — fatto (slide «Gantt di progetto» nel
+   report di progetto); resta da valutare la **baseline** del Gantt (piano
+   della proposta vs ripianificato).
 3. **Avviso settimanale di slittamento** al responsabile di progetto (task
    collegati con scadenza oltre la fine della voce).
 4. **Import del piano ore da tabella** (persona/WP/mesi-persona dalla proposta)

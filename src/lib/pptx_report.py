@@ -56,6 +56,15 @@ COLORE_CATEGORIA = {
     "Proposta inviata": AMBRA,
     "Proposta in bozza": CIELO,
 }
+# Gantt di progetto (gantt_voce): colore per stato della voce
+COLORE_GANTT = {
+    "WP": GRIGIO,
+    "Task": AZZURRO,
+    "Completato": VERDE,
+    "Slittamento": AMBRA,
+    "In ritardo": ROSSO,
+}
+
 COLORE_STATO = {
     "completato": VERDE,
     "in_corso": AZZURRO,
@@ -468,8 +477,15 @@ class Deck:
         oggi: date | None = None,
         nota: str = "",
         max_righe: int = 11,
+        colori: dict | None = None,
     ) -> None:
-        """GANTT disegnato: righe = [{etichetta, inizio, fine, categoria}]."""
+        """GANTT disegnato: righe = [{etichetta, inizio, fine, categoria}].
+
+        Facoltativi per riga: `testo_barra`, `milestone` [date] (rombi),
+        `solo_milestone` (niente barra: solo i rombi — consegne e milestone del
+        Gantt di progetto). `colori` sostituisce la legenda categoria→colore.
+        """
+        colori = colori or COLORE_CATEGORIA
         if not righe or not anni:
             return
         oggi = oggi or date.today()
@@ -513,9 +529,25 @@ class Deck:
                     s, X0, y, lw, rh, r["etichetta"], size=9, anchor=MSO_ANCHOR.MIDDLE
                 )
                 ini, fine = r.get("inizio"), r.get("fine")
-                if isinstance(ini, date) and isinstance(fine, date) and fine >= ini:
+                if r.get("solo_milestone"):
+                    colore = colori.get(r.get("categoria", ""), ROSSO)
+                    for m in r.get("milestone", []) or []:
+                        if isinstance(m, date) and d0 <= m <= d1:
+                            xm = xpos(m)
+                            rombo = s.shapes.add_shape(
+                                MSO_SHAPE.DIAMOND,
+                                Inches(xm - 0.09),
+                                Inches(y + rh * 0.2),
+                                Inches(0.18),
+                                Inches(rh * 0.6),
+                            )
+                            rombo.fill.solid()
+                            rombo.fill.fore_color.rgb = colore
+                            rombo.line.color.rgb = BIANCO
+                            rombo.shadow.inherit = False
+                elif isinstance(ini, date) and isinstance(fine, date) and fine >= ini:
                     xa, xb = xpos(ini), xpos(fine + timedelta(days=1))
-                    colore = COLORE_CATEGORIA.get(r.get("categoria", ""), AZZURRO)
+                    colore = colori.get(r.get("categoria", ""), AZZURRO)
                     barra = self._rett(
                         s,
                         xa,
@@ -580,12 +612,17 @@ class Deck:
                 )
             # legenda
             lx = X0
-            for nome, colore in COLORE_CATEGORIA.items():
+            for nome, colore in colori.items():
                 self._rett(s, lx, 6.55, 0.22, 0.16, colore, rounded=True)
                 self._testo(s, lx + 0.26, 6.48, 1.6, 0.3, nome, size=8, color=GRIGIO)
                 lx += 1.9
             self._rett(s, lx, 6.55, 0.14, 0.16, ROSSO)
             self._testo(s, lx + 0.2, 6.48, 1.2, 0.3, "milestone", size=8, color=GRIGIO)
+            if colori is COLORE_GANTT:
+                self._testo(
+                    s, lx + 1.2, 6.48, 1.6, 0.3, "n/m = task chiusi",
+                    size=8, color=GRIGIO,
+                )
             self._nota(s, nota if n_pag == len(pagine) - 1 else "")
             self._tidy(s)
 
@@ -1133,6 +1170,15 @@ def build_report_progetto(pack: dict) -> bytes:
     if pack.get("gantt"):
         d.gantt(
             "Cronoprogramma", pack["gantt"], pack.get("anni") or [oggi.year], oggi=oggi
+        )
+    if pack.get("gantt_progetto"):
+        d.gantt(
+            "Gantt di progetto",
+            pack["gantt_progetto"],
+            pack.get("anni_gantt") or [oggi.year],
+            oggi=oggi,
+            max_righe=13,
+            colori=COLORE_GANTT,
         )
     if pack.get("economia") and pack.get("quote"):
         d.tabella(

@@ -529,3 +529,48 @@ def progress(items: list[dict], linked: list[dict], today: _dt.date | None = Non
         out[i] = {"n": n, "done": done, "pct": (done / n) if n else None,
                   "late": late, "slip": slip}
     return out
+
+
+def deck_rows(items: list[dict], linked: list[dict], today: _dt.date | None = None) -> list[dict]:
+    """Righe per la slide del Gantt (stesso schema nelle due app).
+
+    items: [{id, parent_id, code, name, kind, start, end, start_month, end_month}]
+    linked: come in `progress`.
+    → [{code, name, kind, level, start, end, months, n, done, pct, state}] in
+      ordine gerarchico; state = 'late' | 'slip' | 'done' | 'open' | 'none'.
+    """
+    prog = progress(items, linked, today)
+    by_id = {it["id"]: it for it in items}
+    kids: dict[Any, list[dict]] = {}
+    roots = []
+    for it in items:
+        p = it.get("parent_id")
+        (kids.setdefault(p, []) if p in by_id else roots).append(it)
+    out: list[dict] = []
+
+    def visit(it: dict, level: int) -> None:
+        p = prog.get(it["id"]) or {}
+        if p.get("late"):
+            state = "late"
+        elif p.get("slip"):
+            state = "slip"
+        elif p.get("n") and p.get("done") == p.get("n"):
+            state = "done"
+        elif p.get("n"):
+            state = "open"
+        else:
+            state = "none"
+        sm, em = it.get("start_month"), it.get("end_month")
+        out.append({
+            "code": it.get("code"), "name": it.get("name"), "kind": it.get("kind"),
+            "level": level, "start": it.get("start"), "end": it.get("end"),
+            "months": (f"M{sm}" if sm == em else f"M{sm}–M{em}") if sm and em else "",
+            "n": p.get("n", 0), "done": p.get("done", 0), "pct": p.get("pct"),
+            "state": state,
+        })
+        for k in kids.get(it["id"], []):
+            visit(k, level + 1)
+
+    for r in roots:
+        visit(r, 0)
+    return out

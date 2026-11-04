@@ -446,6 +446,7 @@ def pack_progetto(persona, iniziativa, economia: bool) -> dict:
         "task_totali": len(tasks),
         "in_ritardo": sum(1 for t in attivi if t.scadenza and t.scadenza < oggi),
         "gantt": _gantt([iniziativa])[0],
+        **_gantt_progetto(iniziativa.id),
         "anni": anni_ore or [oggi.year],
         "milestone": [
             {
@@ -512,6 +513,77 @@ def pack_progetto(persona, iniziativa, economia: bool) -> dict:
             }
         )
     return pack
+
+
+_CATEGORIA_STATO = {"late": "In ritardo", "slip": "Slittamento", "done": "Completato"}
+
+
+def righe_gantt_progetto(righe: list[dict]) -> list[dict]:
+    """`gantt.deck_rows` → righe di `DeckBuilder.gantt` (puro, testabile)."""
+    out = []
+    for r in righe:
+        etichetta = ("   " * r["level"]) + f"{r['code']} {r['name']}"
+        if len(etichetta) > 48:
+            etichetta = etichetta[:47] + "…"
+        categoria = _CATEGORIA_STATO.get(r["state"]) or (
+            "WP" if r["kind"] == "wp" else "Task"
+        )
+        riga = {
+            "etichetta": etichetta,
+            "inizio": r["start"],
+            "fine": r["end"],
+            "categoria": categoria,
+            "testo_barra": f"{r['done']}/{r['n']}" if r["n"] else "",
+        }
+        if r["kind"] in ("milestone", "deliverable") and r["end"]:
+            # consegna: un rombo alla data di fine (rosso se non in stato
+            # particolare, come «milestone» in legenda)
+            riga.update(
+                solo_milestone=True,
+                milestone=[r["end"]],
+                categoria=_CATEGORIA_STATO.get(r["state"], ""),
+            )
+        out.append(riga)
+    return out
+
+
+def _gantt_progetto(iniziativa_id) -> dict:
+    """Voci del Gantt di progetto con l'avanzamento dei task collegati
+    (vuoto se la migrazione 0019 manca o il Gantt non c'è)."""
+    if not _tabella_esiste("gantt_voce"):
+        return {}
+    from src.data import gantt_repo
+    from src.domain.gantt import deck_rows
+
+    voci = gantt_repo.list_voci(iniziativa_id)
+    if not voci:
+        return {}
+    items = [
+        {
+            "id": v["id"],
+            "parent_id": v["parent_id"],
+            "code": v["codice"],
+            "name": v["titolo"],
+            "kind": v["tipo"],
+            "start": v["data_inizio"],
+            "end": v["data_fine"],
+            "start_month": v["mese_inizio"],
+            "end_month": v["mese_fine"],
+        }
+        for v in voci
+    ]
+    linked = [
+        {"gantt_id": t["gantt_voce_id"], "status": t["stato"], "due": t["scadenza"]}
+        for t in gantt_repo.lavoro_collegato(iniziativa_id)
+    ]
+    righe = deck_rows(items, linked)
+    date_ = [d for r in righe for d in (r["start"], r["end"]) if d]
+    if not date_:
+        return {}
+    return {
+        "gantt_progetto": righe_gantt_progetto(righe),
+        "anni_gantt": list(range(min(date_).year, max(date_).year + 1)),
+    }
 
 
 def _tabella_esiste(nome: str) -> bool:
