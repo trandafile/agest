@@ -25,6 +25,16 @@ from src.domain.timesheet import (
 from src.lib.labels import getf
 from src.lib.rendiconto_xlsx import build_rendiconto_xlsx, nome_file
 
+
+
+def _ragione_sociale() -> str:
+    """Da secrets [app].ragione_sociale; senza secrets.toml (solo .env)
+    st.secrets solleva un'eccezione: si usa il default."""
+    try:
+        return st.secrets.get("app", {}).get("ragione_sociale", "ANTECNICA SRLS")
+    except Exception:  # noqa: BLE001
+        return "ANTECNICA SRLS"
+
 persona = require_login()
 
 st.title("Timesheet")
@@ -86,7 +96,15 @@ if not assegnazioni:
 
 # --- Griglia ---------------------------------------------------------------
 info_by_id = {a.id: a for a in assegnazioni}
-etichette = {a.id: f"{a.titolo} [{a.tipo_attivita}]" for a in assegnazioni}
+# etichette univoche: stesso progetto e tipo con WP diversi (o due progetti
+# con lo stesso titolo) davano righe omonime e `.loc` restituiva un DataFrame
+etichette: dict = {}
+for a in assegnazioni:
+    base = f"{a.titolo} [{a.tipo_attivita}]"
+    lab, n = base, 2
+    while lab in etichette.values():
+        lab, n = f"{base} ({n})", n + 1
+    etichette[a.id] = lab
 col_giorni = [etichetta_giorno(g) for g in giorni]
 giorno_by_col = dict(zip(col_giorni, giorni, strict=True))
 
@@ -152,7 +170,8 @@ ore: dict[tuple[str, date], int] = {}
 for a in assegnazioni:
     riga = df_edit.loc[etichette[a.id]]
     for c in col_giorni:
-        v = int(riga[c] or 0)
+        x = riga[c]
+        v = 0 if x is None or pd.isna(x) else int(x)  # cella svuotata = NaN
         if v > 0:
             ore[(a.id, giorno_by_col[c])] = v
 
@@ -270,10 +289,12 @@ with st.expander("📤 Export XLSX per rendicontazione (per progetto)"):
         ore_altri: dict[int, int] = {}
         for r in dettaglio:
             g = r["data"].day
-            if str(r["iniziativa_id"]) == scelta:
+            if str(r["iniziativa_id"]) == scelta and r["tipo_attivita"] in ("RI", "SS"):
                 dest = ore_ri if r["tipo_attivita"] == "RI" else ore_ss
                 dest[g] = dest.get(g, 0) + int(r["ore"])
             else:
+                # altri progetti e attività «altro» (non RI/SS) del progetto:
+                # prima le «altro» finivano nella riga Sviluppo sperimentale
                 ore_altri[g] = ore_altri.get(g, 0) + int(r["ore"])
         logo_info = iniziativa_repo.get_logo(scelta)
         contenuto = build_rendiconto_xlsx(
@@ -283,9 +304,7 @@ with st.expander("📤 Export XLSX per rendicontazione (per progetto)"):
             nome=sel_persona.nome,
             codice_fiscale=getf(sel_persona, "codice_fiscale"),
             cup=info_p["cup"],
-            soggetto_attuatore=st.secrets.get("app", {}).get(
-                "ragione_sociale", "ANTECNICA SRLS"
-            ),
+            soggetto_attuatore=_ragione_sociale(),
             titolo_progetto=info_p["titolo"],
             tipo_progetto=info_p["tipo_desc"],
             monte_ore_annuo=getf(sel_persona, "monte_ore_annuo", 1720),

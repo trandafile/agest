@@ -238,10 +238,12 @@ if persone:
             st.info("Nessuna tariffa per questa persona.")
 
         st.markdown("**Nuova tariffa** (i periodi non possono sovrapporsi)")
+        # «Periodo aperto» fuori dal form: dentro, la spunta non riabilitava
+        # «Valido al» fino all'invio e una tariffa chiusa finiva sempre a oggi
+        aperto = st.checkbox("Periodo aperto (senza data di fine)", value=True)
         with st.form("nuova_tariffa", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
             t_da = c1.date_input("Valido da", value=date.today())
-            aperto = c2.checkbox("Periodo aperto", value=True)
             t_al = c2.date_input("Valido al", value=date.today(), disabled=aperto)
             t_imp = c3.number_input("€/ora", min_value=0.0, step=0.5, format="%.2f")
             if st.form_submit_button("Aggiungi tariffa", type="primary"):

@@ -140,7 +140,12 @@ def scaduti_ieri(tasks: list[dict], oggi: date) -> list[dict]:
         for t in tasks
         if t.get("stato") in ATTIVI
         and t.get("scadenza") == ieri
-        and not t.get("last_reminder_sent")
+        # già avvisato, ma per una scadenza precedente (poi spostata e di
+        # nuovo mancata): prima il promemoria partiva una volta sola per sempre
+        and (
+            not t.get("last_reminder_sent")
+            or t["last_reminder_sent"] <= t["scadenza"]
+        )
     ]
 
 

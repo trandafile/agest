@@ -32,6 +32,16 @@ def _norm(v: object) -> str:
     return str(v).strip().lower() if v is not None else ""
 
 
+def _vero(v: object) -> bool:
+    """Cella «completata»: bool(\"No\") era True, quindi «No»/«FALSE» scritti
+    come testo importavano la voce come già completata."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v != 0
+    return _norm(v) in ("si", "sì", "s", "yes", "y", "true", "vero", "x", "1", "ok", "fatto")
+
+
 def _segno(v: object) -> str | None:
     s = _norm(v)
     if s in ("entrata", "ingresso", "e", "+"):
@@ -166,7 +176,7 @@ def parse_progetto(righe: list[list]) -> dict:
             imp = parse_importo(riga[2]) if len(riga) > 2 else None
             data_attesa = parse_data(riga[3]) if len(riga) > 3 else None
             completata = (
-                bool(riga[4]) if len(riga) > 4 and riga[4] not in (None, "") else False
+                _vero(riga[4]) if len(riga) > 4 and riga[4] not in (None, "") else False
             )
             if imp is None and not descr:
                 continue
@@ -189,6 +199,12 @@ def parse_spese_periodiche(righe: list[list]) -> list[dict]:
     header = [_norm(c) for c in righe[0]]
 
     def idx(*keys):
+        # prima l'intestazione identica, poi quella che la contiene: «al»
+        # matchava per primo «Dal» e la data di fine diventava quella d'inizio
+        for k in keys:
+            for j, c in enumerate(header):
+                if c == k:
+                    return j
         for k in keys:
             for j, c in enumerate(header):
                 if k in c:
@@ -201,7 +217,10 @@ def parse_spese_periodiche(righe: list[list]) -> list[dict]:
     j_per = idx("periodicit")
     j_prog = idx("progetto")
     j_dal = idx("dal")
-    j_al = idx("al")
+    j_al = next(
+        (j for j, c in enumerate(header) if c == "al" or c.startswith("al ")),
+        None,
+    )
     out = []
     for riga in righe[1:]:
         if not riga or all(c is None or str(c).strip() == "" for c in riga):

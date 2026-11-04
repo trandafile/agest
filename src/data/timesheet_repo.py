@@ -17,7 +17,10 @@ def assegnazioni_attive(
     """Assegnazioni della persona valide nel mese (righe della griglia).
 
     Solo iniziative di tipo 'progetto' non chiuse o proposte approvate:
-    a timesheet si registrano ore su progetti reali.
+    a timesheet si registrano ore su progetti reali. In più, le assegnazioni
+    che hanno GIÀ ore nel mese (es. progetto chiuso dopo la conferma): senza
+    di loro, riaprire e riconfermare il mese cancellava quelle ore in silenzio
+    (`conferma_timesheet` sostituisce tutte le ore del mese).
     """
     primo = date(anno, mese, 1)
     ultimo = date(anno + 1, 1, 1) if mese == 12 else date(anno, mese + 1, 1)
@@ -28,12 +31,18 @@ def assegnazioni_attive(
         from assegnazione a
         join iniziativa i on i.id = a.iniziativa_id
         where a.persona_id = %s
-          and i.tipo = 'progetto' and i.stato = 'attivo'
-          and (i.data_inizio is null or i.data_inizio < %s)
-          and (i.data_fine  is null or i.data_fine  >= %s)
+          and (
+            (i.tipo = 'progetto' and i.stato = 'attivo'
+             and (i.data_inizio is null or i.data_inizio < %s)
+             and (i.data_fine  is null or i.data_fine  >= %s))
+            or exists (
+              select 1 from timesheet_ora t
+              where t.assegnazione_id = a.id and t.data >= %s and t.data < %s
+            )
+          )
         order by i.titolo, a.tipo_attivita
         """,
-        (str(persona_id), ultimo, primo),
+        (str(persona_id), ultimo, primo, primo, ultimo),
     )
     return [
         AssegnazioneInfo(

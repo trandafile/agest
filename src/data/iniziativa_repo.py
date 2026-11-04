@@ -169,8 +169,7 @@ def riepilogo_dipendenze(iniziativa_id: UUID | str) -> dict:
 def delete_iniziativa(iniziativa_id: UUID | str) -> None:
     from src.data import commento_repo
 
-    commento_repo.delete_commenti_di("iniziativa", iniziativa_id)
-    db.execute("delete from iniziativa where id = %s", (str(iniziativa_id),))
+    commento_repo.elimina_con_commenti("iniziativa", iniziativa_id)
 
 
 def approva_proposta(

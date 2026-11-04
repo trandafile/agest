@@ -61,11 +61,9 @@ eventi = [e for e in tutti if e["tipo"] in tipi]
 if filtro_p is not None:
     eventi = [e for e in eventi if e["owner_id"] == filtro_p.id]
 if filtro_prog is not None:
-    etichette_prog = {
-        (filtro_prog.acronimo or "").strip(),
-        (filtro_prog.titolo or "").strip(),
-    }
-    eventi = [e for e in eventi if (e.get("progetto") or "") in etichette_prog]
+    # per id: col confronto sull'etichetta, un progetto senza acronimo
+    # includeva tutti i task senza progetto (etichetta vuota)
+    eventi = [e for e in eventi if e.get("iniziativa_id") == filtro_prog.id]
 
 # --- Griglia mensile ---------------------------------------------------------
 del_mese = [e for e in eventi if e["data"].year == anno and e["data"].month == mese]

@@ -519,6 +519,19 @@ def importa_libro_cassa(
     }
     if clear:
         esiti["clear"] = svuota_dati_contabili(eseguito_da=eseguito_da)
+    else:
+        # Reimportare senza svuotare raddoppiava i movimenti previsti (e quindi
+        # gli incassi nella proiezione di cassa) e si fermava a metà sul
+        # vincolo unico di `import_bancario`, lasciando dati parziali.
+        gia = [
+            a for a in sezioni.get("libri", {}) if hash_gia_importato(f"libro-cassa-{a}")
+        ]
+        if gia:
+            raise ValueError(
+                "Libro Cassa già importato per "
+                + ", ".join(str(a) for a in sorted(gia))
+                + ": per reimportarlo spunta «Cancella i dati contabili esistenti»."
+            )
 
     id_by_acr: dict[str, str] = {}
     for acr, dati in sezioni["progetti"].items():

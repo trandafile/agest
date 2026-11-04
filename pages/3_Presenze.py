@@ -105,12 +105,38 @@ tot_ore = sum(float(p.ore_totali or 0) for p in esistenti.values())
 n_giorni_reg = len(esistenti)
 st.caption(f"Registrati **{n_giorni_reg}** giorni, totale **{tot_ore:g} h**.")
 
+def _ora(v):
+    """Cella orario -> datetime.time. In un mese con la colonna tutta vuota il
+    data_editor restituisce il valore grezzo del browser (stringa «09:00» o
+    «09:00:00») e `upsert_presenza_giorno` falliva su `.hour`."""
+    from datetime import datetime, time
+
+    if v is None or (not isinstance(v, (str, time, datetime)) and pd.isna(v)):
+        return None
+    if isinstance(v, datetime):
+        return v.time()
+    if isinstance(v, time):
+        return v
+    s = str(v).strip()
+    if not s:
+        return None
+    for fmt in ("%H:%M:%S", "%H:%M", "%H.%M"):
+        try:
+            return datetime.strptime(s[:8], fmt).time()
+        except ValueError:
+            continue
+    try:  # ISO con data (es. 1970-01-01T09:00:00)
+        return datetime.fromisoformat(s).time()
+    except ValueError:
+        return None
+
+
 if puo_scrivere and st.button("💾 Salva presenze del mese", type="primary"):
     salvate = 0
     for g in giorni:
         riga = df_edit.loc[_etichetta(g)]
-        ingresso = riga["Ingresso"] if pd.notna(riga["Ingresso"]) else None
-        uscita = riga["Uscita"] if pd.notna(riga["Uscita"]) else None
+        ingresso = _ora(riga["Ingresso"])
+        uscita = _ora(riga["Uscita"])
         tipo = riga["Tipo"] if pd.notna(riga["Tipo"]) else None
         note = (riga["Note"] or "").strip() or None
         if ingresso or uscita or note or tipo:

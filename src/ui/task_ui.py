@@ -172,10 +172,15 @@ def task_dialog(
         t for t in task_repo.list_tasks(include_archiviati=False) if t.id != task.id
     ]
     dip_by_id = {str(t.id): t for t in altri}
+    dip_attuali = [str(i) for i in etichetta_repo.dipendenze_task(task.id)]
+    # le dipendenze da task archiviati non sono fra le opzioni: passarle come
+    # default faceva fallire il dialog (StreamlitAPIException); si conservano
+    # al salvataggio senza mostrarle
+    dip_nascoste = [i for i in dip_attuali if i not in dip_by_id]
     dip_scelte = st.multiselect(
         "Dipende da (task che devono precedere)",
         options=list(dip_by_id),
-        default=etichetta_repo.dipendenze_task(task.id),
+        default=[i for i in dip_attuali if i in dip_by_id],
         format_func=lambda i: dip_by_id[i].titolo,
     )
 
@@ -231,7 +236,7 @@ def task_dialog(
             ore_effettive=ore_eff or None,
         )
         etichetta_repo.set_etichette_task(task.id, et_scelte)
-        etichetta_repo.set_dipendenze_task(task.id, dip_scelte)
+        etichetta_repo.set_dipendenze_task(task.id, dip_scelte + dip_nascoste)
         st.rerun()
     if b2.button("🗂 Archivia", use_container_width=True):
         task_repo.update_task(task.id, eseguito_da=persona.email, archiviato=True)
@@ -249,7 +254,7 @@ def task_dialog(
             if st.button(
                 "Elimina", type="primary", disabled=not ok, key=f"del_{task.id}"
             ):
-                task_repo.delete_task(task.id)
+                task_repo.delete_task(task.id, eseguito_da=persona.email)
                 st.rerun()
 
     blocco_subtask(task, nomi, persona, is_admin, can_edit=True)
@@ -512,20 +517,33 @@ def riga_settimana(
         key=f"{key_prefix}_nt_{task.id}",
         label_visibility="collapsed",
     )
-    if c4.button(
-        "Aggiorna", key=f"{key_prefix}_ok_{task.id}", use_container_width=True
-    ):
-        if nuovo == task.stato and not nota.strip():
-            st.toast("Niente da aggiornare.")
-        else:
-            task_repo.aggiorna_rapido(
-                task.id,
-                stato=nuovo if nuovo != task.stato else None,
-                nota=nota,
-                descrizione_attuale=task.descrizione,
-                eseguito_da=persona.email,
-            )
-            st.rerun()
+    c4.button(
+        "Aggiorna",
+        key=f"{key_prefix}_ok_{task.id}",
+        use_container_width=True,
+        on_click=_aggiorna_settimana,
+        args=(task, persona, f"{key_prefix}_st_{task.id}", f"{key_prefix}_nt_{task.id}"),
+    )
+
+
+def _aggiorna_settimana(task: Task, persona: Persona, k_stato: str, k_nota: str) -> None:
+    """Callback di «Aggiorna» (La mia settimana): nel callback si può svuotare
+    la nota; prima restava nel campo e un secondo clic la accodava di nuovo."""
+    nuovo = st.session_state.get(k_stato, task.stato)
+    nota = st.session_state.get(k_nota, "") or ""
+    if nuovo == task.stato and not nota.strip():
+        st.toast("Niente da aggiornare.")
+        return
+    # rilegge la descrizione: un'altra modifica nel frattempo non va persa
+    attuale = task_repo.get_task(task.id)
+    task_repo.aggiorna_rapido(
+        task.id,
+        stato=nuovo if nuovo != task.stato else None,
+        nota=nota,
+        descrizione_attuale=(attuale.descrizione if attuale else task.descrizione),
+        eseguito_da=persona.email,
+    )
+    st.session_state[k_nota] = ""
 
 
 KANBAN_STATI = ("da_fare", "in_corso", "bloccato", "completato")

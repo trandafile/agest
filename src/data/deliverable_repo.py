@@ -130,5 +130,4 @@ def update_deliverable(deliverable_id: UUID | str, **campi) -> Deliverable:
 def delete_deliverable(deliverable_id: UUID | str) -> None:
     from src.data import commento_repo
 
-    commento_repo.delete_commenti_di("deliverable", deliverable_id)
-    db.execute("delete from deliverable where id = %s", (str(deliverable_id),))
+    commento_repo.elimina_con_commenti("deliverable", deliverable_id)

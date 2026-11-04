@@ -169,7 +169,7 @@ if is_admin:
                     100,
                     int(round(float(ep.probabilita_successo or 0) * 100)),
                     step=5,
-                    key="e_prob",
+                    key=f"e_prob_{ep.id}",
                 )
                 _tipi_ric = ["agevolato", "mercato", "ricorrente"]
                 e_ric = m10.selectbox(
@@ -178,7 +178,7 @@ if is_admin:
                     index=_tipi_ric.index(
                         getf(ep, "tipo_ricavo", "agevolato") or "agevolato"
                     ),
-                    key="e_ric",
+                    key=f"e_ric_{ep.id}",
                 )
                 idx_r = next(
                     (i for i, p in enumerate(persone) if p.id == ep.responsabile_id),
@@ -221,7 +221,7 @@ if is_admin:
                 "voci di budget, task/deliverable). Irreversibile."
             )
             conferma_del = st.checkbox(
-                f"Confermo l'eliminazione di «{ep.titolo}»", key="del_prop_conf"
+                f"Confermo l'eliminazione di «{ep.titolo}»", key=f"del_prop_conf_{ep.id}"
             )
             if st.button(
                 "🗑 Elimina proposta", disabled=not conferma_del, type="secondary"

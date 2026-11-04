@@ -14,6 +14,28 @@
 -- Idempotente.
 -- =====================================================================
 
+-- Marcatore delle operazioni sui dati da eseguire UNA volta sola:
+-- apply_schema.py riesegue tutte le migrazioni e il recupero dei dati qui
+-- sotto ricollegava ogni volta gli incassi scollegati a mano.
+create table if not exists public.migrazione_marker (
+  nome        text primary key,
+  eseguita_il timestamptz not null default now()
+);
+alter table public.migrazione_marker enable row level security;
+drop policy if exists migrazione_marker_adm on public.migrazione_marker;
+create policy migrazione_marker_adm on public.migrazione_marker
+  for all using (public.is_admin()) with check (public.is_admin());
+
+-- Se la colonna esiste già, 0018 è stata applicata in passato: il recupero
+-- dei dati esistenti è già stato fatto e non va ripetuto.
+insert into public.migrazione_marker (nome)
+select '0018_recupero_dati'
+ where exists (
+   select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'movimento_previsto'
+      and column_name = 'milestone_id')
+on conflict (nome) do nothing;
+
 alter table public.movimento_previsto
   add column if not exists milestone_id uuid
     references public.milestone(id) on delete set null;
@@ -68,6 +90,13 @@ create trigger movimento_previsto_sync_ms
 -- ---------------------------------------------------------------------
 -- Dati esistenti
 -- ---------------------------------------------------------------------
+-- Solo la prima volta (vedi migrazione_marker in testa al file).
+do $recupero$
+begin
+if not exists (
+  select 1 from public.migrazione_marker where nome = '0018_recupero_dati'
+) then
+
 -- 1) movimenti già inseriti -> milestone di pagamento corrispondente
 update public.movimento_previsto p
    set milestone_id = (
@@ -102,6 +131,11 @@ update public.milestone m
    and not exists (
          select 1 from public.movimento_previsto p
           where p.milestone_id = m.id and p.segno = 'entrata');
+
+insert into public.migrazione_marker (nome) values ('0018_recupero_dati');
+end if;
+end
+$recupero$;
 
 -- 4) allinea i campi derivati delle milestone con movimenti collegati
 select public.sync_milestone_incasso(m.id)

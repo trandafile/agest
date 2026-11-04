@@ -83,9 +83,13 @@ with tab_imp:
                 value=False,
             )
             if st.button("Importa Libro Cassa", type="primary"):
-                esiti = finanza_repo.importa_libro_cassa(
-                    sezioni, clear=clear, eseguito_da=UTENTE
-                )
+                try:
+                    esiti = finanza_repo.importa_libro_cassa(
+                        sezioni, clear=clear, eseguito_da=UTENTE
+                    )
+                except ValueError as exc:
+                    st.error(str(exc))
+                    st.stop()
                 if esiti["clear"]:
                     st.warning(f"Cancellati: {esiti['clear']}")
                 st.success(
@@ -154,7 +158,16 @@ with tab_imp:
                     if scelta != "(nessuna)":
                         mappa[campo] = scelta
 
-            if st.button("Importa", type="primary"):
+            import hashlib
+
+            impronta = "generico-" + hashlib.sha1(file.getvalue()).hexdigest()
+            gia_importato = finanza_repo.hash_gia_importato(impronta)
+            if gia_importato:
+                st.warning(
+                    "Questo file risulta già importato: un nuovo import "
+                    "duplicherebbe le righe."
+                )
+            if st.button("Importa", type="primary", disabled=gia_importato):
                 grezze = df.to_dict("records")
                 if destinazione == "Movimenti bancari":
                     norm = [normalizza_movimento(r, mappa) for r in grezze]
@@ -165,6 +178,10 @@ with tab_imp:
                     buone = [r for r in norm if r]
                     n = finanza_repo.import_documenti(buone, eseguito_da=UTENTE)
                 scartate = len(grezze) - len(buone)
+                oggi_ = date.today()
+                finanza_repo.registra_import(
+                    oggi_.year, oggi_.month, file.name, impronta, n, UTENTE
+                )
                 st.success(
                     f"Importate {n} righe"
                     + (

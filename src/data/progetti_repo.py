@@ -141,8 +141,7 @@ def set_stato_milestone(milestone_id: UUID | str, stato: str) -> None:
 def delete_milestone(milestone_id: UUID | str) -> None:
     from src.data import commento_repo
 
-    commento_repo.delete_commenti_di("milestone", milestone_id)
-    db.execute("delete from milestone where id = %s", (str(milestone_id),))
+    commento_repo.elimina_con_commenti("milestone", milestone_id)
 
 
 # --- Query economiche -----------------------------------------------------------

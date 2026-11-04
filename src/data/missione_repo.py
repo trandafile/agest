@@ -102,8 +102,7 @@ def delete_missione(missione_id: UUID | str) -> None:
     """Elimina la missione (le spese cadono in cascata) e i suoi commenti."""
     from src.data import commento_repo
 
-    commento_repo.delete_commenti_di("missione", missione_id)
-    db.execute("delete from missione where id = %s", (str(missione_id),))
+    commento_repo.elimina_con_commenti("missione", missione_id)
 
 
 # --- Flusso di autorizzazione ----------------------------------------------

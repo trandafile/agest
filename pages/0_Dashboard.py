@@ -11,6 +11,7 @@ from datetime import date, timedelta
 import streamlit as st
 
 from src.auth.session import require_login
+from src.auth.visibilita import vede_economia
 from src.data import iniziativa_repo, persona_repo, task_repo
 from src.domain.models import RuoloSistema, Task
 from src.lib.labels import etichetta_progetto
@@ -204,7 +205,11 @@ if mie_iniziative:
         tag = "📝 Proposta" if i.tipo == "proposta" else "📊 Progetto"
         st.markdown(
             f"- {tag} · **{etichetta_progetto(i)}** — stato: {i.stato}"
-            + (f" · budget {float(i.budget_totale):,.0f} €" if i.budget_totale else "")
+            + (
+                f" · budget {float(i.budget_totale):,.0f} €"
+                if i.budget_totale and vede_economia(persona.ruolo_sistema)
+                else ""
+            )
         )
 
 # --- Analisi carico di lavoro (admin/pm) ------------------------------------

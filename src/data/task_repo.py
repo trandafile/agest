@@ -107,13 +107,18 @@ def update_task(task_id: UUID | str, eseguito_da: str | None = None, **campi) ->
     campi = {k: v for k, v in campi.items() if k in _UPDATABLE}
     if not campi:
         raise ValueError("Nessun campo aggiornabile fornito.")
-    # completamento: traccia la data
-    if campi.get("stato") == "completato" and "completato_il" not in campi:
-        campi["completato_il"] = date.today()
     if campi.get("stato") in ("da_fare", "in_corso", "bloccato"):
         campi.setdefault("completato_il", None)
     set_clause = ", ".join(f"{k} = %s" for k in campi)
     params = [str(v) if isinstance(v, UUID) else v for v in campi.values()]
+    if campi.get("stato") == "completato" and "completato_il" not in campi:
+        # data di completamento solo al PASSAGGIO a completato: risalvare un
+        # task già completato (il dialog passa sempre lo stato) la riportava
+        # a oggi, falsando puntualità, «completati 30g» e monthly report
+        set_clause += (
+            ", completato_il = case when stato = 'completato' "
+            "then coalesce(completato_il, current_date) else current_date end"
+        )
     params.append(str(task_id))
     row = db.execute(
         f"update task set {set_clause} where id = %s returning *",
@@ -123,11 +128,11 @@ def update_task(task_id: UUID | str, eseguito_da: str | None = None, **campi) ->
     return _to_task(row)
 
 
-def delete_task(task_id: UUID | str) -> None:
+def delete_task(task_id: UUID | str, eseguito_da: str | None = None) -> None:
+    """Elimina task, subtask (cascata) e i loro commenti, atomicamente."""
     from src.data import commento_repo
 
-    commento_repo.delete_commenti_di("task", task_id)
-    db.execute("delete from task where id = %s", (str(task_id),))
+    commento_repo.elimina_con_commenti("task", task_id, eseguito_da)
 
 
 def puo_modificare(task: Task, persona_id: UUID, is_admin: bool) -> bool:

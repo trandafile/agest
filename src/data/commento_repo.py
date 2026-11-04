@@ -86,3 +86,39 @@ def conta_commenti(entita: str, ids: list[str] | None = None) -> dict[str, int]:
         params.append([str(i) for i in ids])
     sql += " group by entita_id"
     return {str(r["entita_id"]): r["n"] for r in db.query(sql, params)}
+
+
+_TABELLE_COMMENTABILI = {
+    "task": "task",
+    "deliverable": "deliverable",
+    "milestone": "milestone",
+    "iniziativa": "iniziativa",
+    "missione": "missione",
+}
+
+
+def elimina_con_commenti(
+    entita: str, entita_id: UUID | str, eseguito_da: str | None = None
+) -> None:
+    """Elimina l'entità e i suoi commenti in UNA transazione.
+
+    Prima i commenti erano cancellati in una transazione separata: se poi la
+    DELETE dell'entità falliva (es. ore di timesheet confermate in cascata)
+    i commenti erano persi comunque. Per un task cancella anche i commenti
+    dei subtask, che cadono in cascata con lui.
+    """
+    tabella = _TABELLE_COMMENTABILI[_check(entita)]
+    eid = str(entita_id)
+    with db.transaction(user_email=eseguito_da) as cur:
+        if entita == "task":
+            cur.execute(
+                """delete from commento where entita = 'task' and entita_id in (
+                       select id from task where id = %s or parent_task_id = %s)""",
+                (eid, eid),
+            )
+        else:
+            cur.execute(
+                "delete from commento where entita = %s and entita_id = %s",
+                (entita, eid),
+            )
+        cur.execute(f"delete from {tabella} where id = %s", (eid,))

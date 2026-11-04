@@ -7,6 +7,8 @@ campi di `movimento_bancario` / `documento_fiscale`. Pure Python, testabile.
 
 from __future__ import annotations
 
+import re
+
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -70,6 +72,10 @@ def parse_importo(val: object) -> Decimal | None:
             s = s.replace(",", "")
     elif "," in s:
         s = s.replace(",", ".")
+    elif re.fullmatch(r"[-+]?[1-9]\d{0,2}(\.\d{3})+", s):
+        # solo punti a gruppi di tre: separatore delle migliaia all'italiana
+        # ('1.500' = 1500, '1.234.567' = 1234567), non un decimale
+        s = s.replace(".", "")
     try:
         return Decimal(s)
     except InvalidOperation:

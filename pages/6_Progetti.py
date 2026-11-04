@@ -944,17 +944,25 @@ with tab_ms:
                 # associazione deliverable del progetto alla milestone
                 delivs = deliverable_repo.list_deliverables(sel.id)
                 if delivs:
-                    attuali = etichetta_repo.deliverable_di_milestone(m_sel.id)
+                    attuali = [
+                        str(a) for a in etichetta_repo.deliverable_di_milestone(m_sel.id)
+                    ]
+                    opz_ms = [str(d.id) for d in delivs]
+                    # deliverable archiviati: non fra le opzioni (default
+                    # invalido = StreamlitAPIException), conservati al salvataggio
+                    nascosti_ms = [a for a in attuali if a not in opz_ms]
                     scelti = st.multiselect(
                         "Deliverable raccolti da questa milestone",
-                        options=[str(d.id) for d in delivs],
-                        default=[a for a in attuali],
+                        options=opz_ms,
+                        default=[a for a in attuali if a in opz_ms],
                         format_func=lambda i: next(
                             (d.titolo for d in delivs if str(d.id) == i), i
                         ),
                     )
                     if st.button("Salva deliverable milestone"):
-                        etichetta_repo.set_deliverable_milestone(m_sel.id, scelti)
+                        etichetta_repo.set_deliverable_milestone(
+                            m_sel.id, scelti + nascosti_ms
+                        )
                         st.success("Associazione salvata.")
                         st.rerun()
                 else:

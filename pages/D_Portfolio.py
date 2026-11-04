@@ -510,8 +510,14 @@ if is_admin:
             )
         if st.button("💾 Salva piano ore", type="primary"):
             for r, (_, riga) in zip(righe_ed, edit.iterrows(), strict=True):
+                # cella svuotata = NaN: `float(nan or 0)` resta NaN (NaN è
+                # «vero») e Postgres numeric lo accetta, rompendo ogni somma
                 portfolio_repo.salva_piano_ore(
-                    r["_id"], {an: float(riga[str(an)] or 0) for an in anni_ini}
+                    r["_id"],
+                    {
+                        an: (0.0 if pd.isna(riga[str(an)]) else float(riga[str(an)]))
+                        for an in anni_ini
+                    },
                 )
             st.success("Piano ore salvato.")
             st.rerun()

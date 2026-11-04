@@ -270,6 +270,7 @@ class Task(BaseModel):
     last_reminder_sent: date | None = None  # v3
     gantt_voce_id: UUID | None = None  # voce di cronoprogramma (0019)
     created_at: datetime | None = None
+    updated_at: datetime | None = None  # usato da task_storico_repo.giorni_fermo
 
     @property
     def attivo(self) -> bool:
