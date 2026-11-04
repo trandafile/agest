@@ -88,10 +88,6 @@ alter table public.deliverable
     references public.gantt_voce(id) on delete set null;
 create index if not exists deliverable_gantt_idx on public.deliverable (gantt_voce_id);
 
--- indici mancanti sui filtri più usati dalle pagine Task/Deliverable
-create index if not exists task_stato_idx on public.task (stato) where not archiviato;
-create index if not exists deliverable_owner_idx on public.deliverable (owner_id);
-
 -- ---------------------------------------------------------------------
 -- RLS gantt_voce: lettura a tutti gli autenticati, scrittura solo admin
 -- (la pagina Gantt è riservata all'amministratore).

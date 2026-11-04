@@ -179,12 +179,15 @@ with t_gantt:
                                       "y": 1.02, "x": 0, "title": None})
             st.plotly_chart(fig, use_container_width=True)
 
+        con_deliv = {d["gantt_voce_id"] for d in gantt_repo.deliverable_collegati(ini.id)}
         tab = []
         for v in voci:
             p = prog.get(v["id"]) or {}
             flag = ("⚠️ in ritardo" if p.get("late") else
                     "↗ slittamento" if p.get("slip") else
                     "✅" if p.get("pct") == 1 else "")
+            if v["id"] in con_deliv:
+                flag = (flag + " 📦 collegato").strip()
             tab.append({
                 "Codice": v["codice"],
                 "Voce": ("  " * _livello(v, by_id)) + v["titolo"],
