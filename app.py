@@ -103,6 +103,17 @@ def main() -> None:
     pagina = st.navigation(nav, position="sidebar", expanded=True)
     sidebar_utente(persona)
     with st.sidebar:
+        # Le letture sono in cache (src/lib/db.py): ogni scrittura dell'app la
+        # aggiorna da sola; questo serve solo per modifiche fatte da fuori
+        # (script, SQL, altri utenti su un'altra istanza).
+        if st.button("🔄 Aggiorna dati", use_container_width=True,
+                     help="Rilegge tutto dal database (la cache si aggiorna "
+                          "già da sola dopo ogni modifica fatta nell'app)."):
+            from src.lib import db
+
+            db.invalida_cache()
+            st.rerun()
+    with st.sidebar:
         st.caption(f"Livello: {descrizione_livello(persona)}")
 
     versione = versione_app()

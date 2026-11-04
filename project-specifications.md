@@ -718,3 +718,19 @@ task a una voce del cronoprogramma. Validazione con anteprima, poi scrittura in
   `GOOGLE_CLIENT_ID` e senza flag la pagina di accesso mostra un errore.
 - 0018: il recupero dei dati esistenti gira una sola volta
   (`migrazione_marker`).
+
+### 14.5 Cache delle letture (11/2026)
+
+- Tutte le SELECT passano da `db.query` / `db.query_one`, ora in cache
+  (`st.cache_data`, chiave = epoca dei dati + SQL + parametri, TTL 120 s).
+  Ogni scrittura fatta dall'app (`db.execute`, `db.transaction`) apre una nuova
+  epoca: dopo una modifica tutte le pagine leggono il dato aggiornato, anche
+  per le tabelle toccate da trigger e cascate. Il TTL limita solo il ritardo
+  delle modifiche fatte fuori dall'app (script, SQL); «🔄 Aggiorna dati» nella
+  barra laterale rilegge tutto. `cache=False` per leggere sempre dal DB.
+- Gli export costruiti a ogni rerun (report attività Markdown/XLSX nella
+  pagina Task) passano da `db.file_in_cache`: una volta per epoca.
+- Regola: niente accessi al DB fuori da `src/lib/db.py` (salterebbero
+  l'invalidazione) e niente `st.cache_data` scritti a mano sulle letture.
+- Misura locale sullo stesso percorso di navigazione (Task e viste, Dashboard,
+  Deliverable, Calendario, avanti e indietro): 188 → 36 transazioni sul DB.

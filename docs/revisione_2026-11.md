@@ -70,7 +70,14 @@ percorso relativo.
   commento, assegnazione, file d'archivio.
 - Missioni: importi visibili a tutti (la pagina dice che è voluto).
 
-## 4. Prestazioni (analisi; codice non modificato, come richiesto)
+## 4. Prestazioni
+
+**Fatto dopo la revisione, su richiesta: cache.** Letture in cache in
+`src/lib/db.py` con invalidazione a ogni scrittura; export della pagina Task
+in cache per epoca; «🔄 Aggiorna dati» in barra laterale (spec §14.5).
+Stesso percorso di navigazione misurato in locale: 188 → 36 transazioni, zero
+per le pagine già viste finché nessuno modifica qualcosa. Sotto l'analisi
+originale: i punti 1 e parte del 3 sono risolti.
 
 Cause principali, in ordine di impatto:
 1. **Nessuna cache** (`st.cache_data` assente): ogni clic riesegue la pagina e

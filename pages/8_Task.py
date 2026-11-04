@@ -59,23 +59,32 @@ vista = st.radio(
 )
 
 with st.expander("📄 Esporta report attività"):
+    from src.lib import db as _db
     from src.lib.report_attivita import report_markdown, tasks_xlsx
 
+    # costruiti una volta per epoca dei dati, non a ogni rerun (l'expander
+    # esegue il suo contenuto anche quando è chiuso)
     _tutti_task = task_repo.list_tasks(include_archiviati=False)
     _deliv_by_ini = {i.id: deliverable_repo.list_deliverables(i.id) for i in iniziative}
-    md = report_markdown(
-        iniziative, _deliv_by_ini, _tutti_task, nomi, etichetta_progetto
+    md = _db.file_in_cache(
+        "report_attivita_md",
+        None,
+        lambda: report_markdown(
+            iniziative, _deliv_by_ini, _tutti_task, nomi, etichetta_progetto
+        ),
     )
     e1, e2 = st.columns(2)
     e1.download_button(
         "⬇️ Report Markdown",
-        md.encode("utf-8"),
+        md,
         "report_attivita.md",
         "text/markdown",
     )
     e2.download_button(
         "⬇️ Task XLSX",
-        tasks_xlsx(_tutti_task, nomi, titoli_ini),
+        _db.file_in_cache(
+            "report_task_xlsx", None, lambda: tasks_xlsx(_tutti_task, nomi, titoli_ini)
+        ),
         "report_task.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
